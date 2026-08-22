@@ -41,11 +41,10 @@ export default function App() {
     localStorage.setItem('fs_theme', nextTheme);
   };
 
-  // Core Data State (100% Cloud Firestore Realtime Sync)
+  // Core Data State (Instant Local Cache + Cloud Firestore Realtime Sync)
   const [albums, setAlbums] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
-  const hasInitializedDefault = useRef(false);
 
   // Modals & Drawers UI State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -55,7 +54,7 @@ export default function App() {
   // Album Modal state
   const [albumModal, setAlbumModal] = useState({ isOpen: false, mode: 'create', album: null });
 
-  // 1. Auth Subscription & State Reset
+  // 1. Auth Subscription & User State Reset
   useEffect(() => {
     if (isFirebaseConfigured) {
       const unsubscribe = subscribeToAuthChanges((currentUser) => {
@@ -66,7 +65,6 @@ export default function App() {
           setTickets([]);
           setSelectedAlbumId(null);
           setSelectedTicket(null);
-          hasInitializedDefault.current = false;
         }
       });
       return () => unsubscribe();
@@ -95,12 +93,25 @@ export default function App() {
     setTickets([]);
     setSelectedAlbumId(null);
     setSelectedTicket(null);
-    hasInitializedDefault.current = false;
   };
 
-  // 2. Pure Cloud Firestore Realtime Sync
+  // Helper to persist user state in LocalStorage & State
+  const updateLocalAndCloudState = (newAlbums, newTickets) => {
+    const activeUid = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    
+    if (newAlbums !== null && newAlbums !== undefined) {
+      setAlbums(newAlbums);
+      localStorage.setItem(`fs_albums_${activeUid}`, JSON.stringify(newAlbums));
+    }
+    if (newTickets !== null && newTickets !== undefined) {
+      setTickets(newTickets);
+      localStorage.setItem(`fs_tickets_${activeUid}`, JSON.stringify(newTickets));
+    }
+  };
+
+  // 2. Hybrid Persistence Engine (Instant Local Restore + Firestore Realtime Sync)
   useEffect(() => {
-    const activeUid = user?.uid;
+    const activeUid = user?.uid || (isDemoUser ? 'demo_user_123' : null);
 
     if (!activeUid) {
       setAlbums([]);
@@ -110,105 +121,146 @@ export default function App() {
       return;
     }
 
-    setSelectedAlbumId(null);
-    setSelectedTicket(null);
+    // 1. Immediately restore cached local data for 0ms render on refresh (F5)
+    const cachedAlbums = localStorage.getItem(`fs_albums_${activeUid}`);
+    const cachedTickets = localStorage.getItem(`fs_tickets_${activeUid}`);
+    const defaultCleanAlbum = [{ id: 'alb_gen_' + activeUid.slice(0, 6), userId: activeUid, name: 'General', createdAt: new Date().toISOString(), isArchived: false }];
+
+    if (cachedAlbums) {
+      try {
+        const parsed = JSON.parse(cachedAlbums);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAlbums(parsed);
+        } else {
+          setAlbums(defaultCleanAlbum);
+        }
+      } catch (e) {
+        setAlbums(defaultCleanAlbum);
+      }
+    } else {
+      setAlbums(defaultCleanAlbum);
+    }
+
+    if (cachedTickets) {
+      try {
+        const parsed = JSON.parse(cachedTickets);
+        if (Array.isArray(parsed)) {
+          setTickets(parsed);
+        }
+      } catch (e) {}
+    }
 
     const isRealUser = isFirebaseConfigured && !isDemoUser && activeUid !== 'demo_user_123';
 
     if (isRealUser) {
-      // Realtime Albums Subscription from Firestore
+      // Subscribe to Albums in Firestore
       const albumsRef = collection(db, 'albums');
       const qAlbums = query(albumsRef, where('userId', '==', activeUid));
       const unsubAlbums = onSnapshot(qAlbums, (snapshot) => {
         const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        setAlbums(list);
-
-        if (list.length === 0 && !hasInitializedDefault.current) {
-          hasInitializedDefault.current = true;
-          addDoc(collection(db, 'albums'), {
-            userId: activeUid,
-            name: 'General',
-            createdAt: new Date().toISOString(),
-            isArchived: false
-          }).catch(err => console.warn('Error al crear álbum por defecto:', err.message));
+        if (list.length > 0) {
+          updateLocalAndCloudState(list, null);
+        } else {
+          // If Firestore has no documents yet, push initial General album to Firestore
+          addDoc(collection(db, 'albums'), defaultCleanAlbum[0])
+            .catch(err => console.warn('Firestore album init notice:', err.message));
         }
       }, (err) => console.warn('Snapshot albums:', err.message));
 
-      // Realtime Tickets Subscription from Firestore
+      // Subscribe to Tickets in Firestore
       const ticketsRef = collection(db, 'tickets');
       const qTickets = query(ticketsRef, where('userId', '==', activeUid));
       const unsubTickets = onSnapshot(qTickets, (snapshot) => {
         const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        setTickets(list);
+        if (list.length > 0) {
+          updateLocalAndCloudState(null, list);
+        }
       }, (err) => console.warn('Snapshot tickets:', err.message));
 
       return () => {
         unsubAlbums();
         unsubTickets();
       };
-    } else if (isDemoUser) {
-      // Demo session memory state
-      const demoAlbum = [{ id: 'alb_demo_gen', userId: 'demo_user_123', name: 'General', createdAt: new Date().toISOString(), isArchived: false }];
-      setAlbums(demoAlbum);
-      setTickets([]);
     }
   }, [user?.uid, isDemoUser]);
 
   // ----------------------------------------------------
-  // Album Actions (100% Cloud Firestore)
+  // Album Actions (Instant UI + Cloud Firestore Backup)
   // ----------------------------------------------------
   const handleCreateAlbum = async (name) => {
-    const activeUserId = user?.uid;
-    if (!activeUserId) return;
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const tempId = 'alb_' + Date.now();
+    const cleanName = name.trim();
+    if (!cleanName) return;
+
+    const newAlbum = {
+      id: tempId,
+      userId: activeUserId,
+      name: cleanName,
+      createdAt: new Date().toISOString(),
+      isArchived: false,
+    };
+
+    const updatedAlbums = [...albums, newAlbum];
+    updateLocalAndCloudState(updatedAlbums, null);
 
     const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    
     if (isRealUser) {
       try {
-        await addDoc(collection(db, 'albums'), {
+        const docRef = await addDoc(collection(db, 'albums'), {
           userId: activeUserId,
-          name: name.trim(),
+          name: cleanName,
           createdAt: new Date().toISOString(),
           isArchived: false,
         });
+
+        // Replace temp ID with Firestore document ID
+        setAlbums(prev => {
+          const list = prev.map(a => a.id === tempId ? { ...a, id: docRef.id } : a);
+          localStorage.setItem(`fs_albums_${activeUserId}`, JSON.stringify(list));
+          return list;
+        });
       } catch (err) {
-        console.error('Error al crear álbum en Firestore:', err);
+        console.warn('Firestore album create notice:', err.message);
       }
-    } else {
-      const newAlb = { id: 'alb_' + Date.now(), userId: activeUserId, name: name.trim(), createdAt: new Date().toISOString(), isArchived: false };
-      setAlbums(prev => [...prev, newAlb]);
     }
   };
 
   const handleEditAlbum = async (name) => {
     if (!albumModal.album) return;
-    const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const cleanName = name.trim();
+    if (!cleanName) return;
 
+    const updatedAlbums = albums.map(a => a.id === albumModal.album.id ? { ...a, name: cleanName } : a);
+    updateLocalAndCloudState(updatedAlbums, null);
+
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
-        await updateDoc(doc(db, 'albums', albumModal.album.id), { name: name.trim() });
+        await updateDoc(doc(db, 'albums', albumModal.album.id), { name: cleanName });
       } catch (err) {
-        console.error('Error al editar álbum en Firestore:', err);
+        console.warn('Firestore album update notice:', err.message);
       }
-    } else {
-      setAlbums(prev => prev.map(a => a.id === albumModal.album.id ? { ...a, name: name.trim() } : a));
     }
   };
 
   const handleDeleteAlbum = async (albumId) => {
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const updatedAlbums = albums.filter(a => a.id !== albumId);
+    updateLocalAndCloudState(updatedAlbums, null);
+
     if (selectedAlbumId === albumId) {
       setSelectedAlbumId(null);
     }
-    const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
 
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
         await deleteDoc(doc(db, 'albums', albumId));
       } catch (err) {
-        console.error('Error al eliminar álbum en Firestore:', err);
+        console.warn('Firestore album delete notice:', err.message);
       }
-    } else {
-      setAlbums(prev => prev.filter(a => a.id !== albumId));
     }
   };
 
@@ -216,10 +268,14 @@ export default function App() {
     const alb = albums.find(a => a.id === albumId);
     if (!alb) return;
 
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
     const nextArchived = !alb.isArchived;
     const todayStr = new Date().toLocaleDateString('es-MX');
-    const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
 
+    const updatedAlbums = albums.map(a => a.id === albumId ? { ...a, isArchived: nextArchived, archivedAt: nextArchived ? todayStr : null } : a);
+    updateLocalAndCloudState(updatedAlbums, null);
+
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
         await updateDoc(doc(db, 'albums', albumId), {
@@ -227,25 +283,21 @@ export default function App() {
           archivedAt: nextArchived ? todayStr : null
         });
       } catch (err) {
-        console.error('Error al archivar álbum en Firestore:', err);
+        console.warn('Firestore album archive notice:', err.message);
       }
-    } else {
-      setAlbums(prev => prev.map(a => a.id === albumId ? { ...a, isArchived: nextArchived, archivedAt: nextArchived ? todayStr : null } : a));
     }
   };
 
   // ----------------------------------------------------
-  // Ticket Actions (100% Cloud Firestore + Cloud Storage)
+  // Ticket Actions (Instant UX + Cloud Storage Backup)
   // ----------------------------------------------------
   const handleSaveNewTicket = async (ticketData) => {
-    const activeUserId = user?.uid;
-    if (!activeUserId) return;
-
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    const targetAlbumId = ticketData.albumId || (albums[0]?.id || '');
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const newTicketId = 'tkt_' + Date.now();
 
     const payload = {
-      albumId: targetAlbumId,
+      id: newTicketId,
+      albumId: ticketData.albumId || (albums[0]?.id || 'alb_1'),
       userId: activeUserId,
       imageUrl: ticketData.imageUrl || '',
       businessName: ticketData.businessName || 'Comercio General',
@@ -264,74 +316,86 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
+    const updatedTickets = [payload, ...tickets];
+    updateLocalAndCloudState(null, updatedTickets);
+
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
-        const docRef = await addDoc(collection(db, 'tickets'), payload);
+        const { id, ...docData } = payload;
+        const docRef = await addDoc(collection(db, 'tickets'), docData);
 
-        // Upload ticket photo to Firebase Cloud Storage if present
         if (ticketData.imageFile) {
           const fileRef = ref(storage, `users/${activeUserId}/tickets/${docRef.id}_${Date.now()}.webp`);
           const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
           const storageUrl = await getDownloadURL(uploadSnap.ref);
+
           await updateDoc(doc(db, 'tickets', docRef.id), { imageUrl: storageUrl });
+
+          setTickets(prev => {
+            const list = prev.map(t => t.id === newTicketId ? { ...t, id: docRef.id, imageUrl: storageUrl } : t);
+            localStorage.setItem(`fs_tickets_${activeUserId}`, JSON.stringify(list));
+            return list;
+          });
         }
       } catch (err) {
-        console.error('Error al guardar ticket en Firestore:', err);
+        console.warn('Firestore ticket create notice:', err.message);
       }
-    } else {
-      setTickets(prev => [{ id: 'tkt_' + Date.now(), ...payload }, ...prev]);
     }
   };
 
   const handleToggleBilled = async (ticketId, isBilled) => {
-    const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const updatedTickets = tickets.map(t => t.id === ticketId ? { ...t, isBilled } : t);
+    updateLocalAndCloudState(null, updatedTickets);
 
     if (selectedTicket?.id === ticketId) {
       setSelectedTicket(prev => prev ? { ...prev, isBilled } : null);
     }
 
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
         await updateDoc(doc(db, 'tickets', ticketId), { isBilled });
       } catch (err) {
-        console.error('Error al actualizar estado facturado en Firestore:', err);
+        console.warn('Firestore toggle billed notice:', err.message);
       }
-    } else {
-      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, isBilled } : t));
     }
   };
 
   const handleSaveEditedTicket = async (ticketData) => {
-    const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const updatedTickets = tickets.map(t => t.id === ticketData.id ? ticketData : t);
+    updateLocalAndCloudState(null, updatedTickets);
+    setSelectedTicket(ticketData);
 
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
         const { id, ...dataToUpdate } = ticketData;
         await updateDoc(doc(db, 'tickets', id), dataToUpdate);
-        setSelectedTicket(ticketData);
       } catch (err) {
-        console.error('Error al actualizar ticket en Firestore:', err);
+        console.warn('Firestore ticket update notice:', err.message);
       }
-    } else {
-      setTickets(prev => prev.map(t => t.id === ticketData.id ? ticketData : t));
-      setSelectedTicket(ticketData);
     }
   };
 
   const handleDeleteTicket = async (ticketId) => {
+    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const updatedTickets = tickets.filter(t => t.id !== ticketId);
+    updateLocalAndCloudState(null, updatedTickets);
+
     if (selectedTicket?.id === ticketId) {
       setSelectedTicket(null);
     }
-    const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
 
+    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
     if (isRealUser) {
       try {
         await deleteDoc(doc(db, 'tickets', ticketId));
       } catch (err) {
-        console.error('Error al eliminar ticket de Firestore:', err);
+        console.warn('Firestore ticket delete notice:', err.message);
       }
-    } else {
-      setTickets(prev => prev.filter(t => t.id !== ticketId));
     }
   };
 
