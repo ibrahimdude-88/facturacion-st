@@ -111,8 +111,11 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
       return;
     }
 
-    if (files.length > availableSlots) {
-      setRateLimitNotice(`Se procesarán únicamente ${availableSlots} ticket(s) para no superar los 15 por minuto.`);
+    const totalSelectedCount = files.length;
+
+    if (totalSelectedCount > availableSlots) {
+      const trimmedCount = totalSelectedCount - availableSlots;
+      setRateLimitNotice(`⚠️ Seleccionaste ${totalSelectedCount} tickets. Para no superar el límite de 15 por minuto, se procesaron ${availableSlots} ticket(s). El ticket restante podrás subirlo en unos segundos.`);
       files = files.slice(0, availableSlots);
     } else {
       setRateLimitNotice('');
@@ -472,6 +475,13 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
           {step === 'review' && activeTicket && (
             <div className="space-y-5">
               
+              {rateLimitNotice && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center space-x-2">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{rateLimitNotice}</span>
+                </div>
+              )}
+
               {/* Top Batch Navigation Bar */}
               <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center space-x-2">
