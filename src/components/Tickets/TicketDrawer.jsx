@@ -7,7 +7,7 @@ import TicketItemRow from './TicketItemRow';
 import { formatCurrency } from '../Analytics/StatsOverview';
 import { handleOpenGmailBilling } from './TicketsTable';
 
-export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, onDelete }) {
+export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, onDelete, onOpenEmailModal }) {
   const [formData, setFormData] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -263,7 +263,13 @@ export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, 
               return (
                 <button
                   type="button"
-                  onClick={() => handleOpenGmailBilling(formData)}
+                  onClick={() => {
+                    if (onOpenEmailModal) {
+                      onOpenEmailModal(formData);
+                    } else {
+                      handleOpenGmailBilling(formData);
+                    }
+                  }}
                   className="w-full py-2.5 px-4 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-sm"
                 >
                   <Mail className="w-4 h-4 text-purple-400" />

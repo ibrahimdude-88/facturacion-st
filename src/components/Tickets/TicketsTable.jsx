@@ -69,7 +69,8 @@ export default function TicketsTable({
   selectedAlbumId, 
   onToggleBilled, 
   onSelectTicket, 
-  onDeleteTicket 
+  onDeleteTicket,
+  onOpenEmailModal
 }) {
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'pending' | 'billed'
   const [searchQuery, setSearchQuery] = useState('');
@@ -298,10 +299,14 @@ export default function TicketsTable({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenGmailBilling(ticket);
+                                if (onOpenEmailModal) {
+                                  onOpenEmailModal(ticket);
+                                } else {
+                                  handleOpenGmailBilling(ticket);
+                                }
                               }}
                               className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[11px] font-semibold transition-all"
-                              title={ticket.billingEmail ? `Enviar correo a ${ticket.billingEmail} (adjunta foto autodescargada)` : 'Abrir Gmail para solicitar factura'}
+                              title={ticket.billingEmail ? `Enviar correo a ${ticket.billingEmail}` : 'Redactar correo de facturación'}
                             >
                               <Mail className="w-3.5 h-3.5 text-purple-400" />
                               <span>Enviar Correo</span>
@@ -409,12 +414,16 @@ export default function TicketsTable({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleOpenGmailBilling(ticket);
+                            if (onOpenEmailModal) {
+                              onOpenEmailModal(ticket);
+                            } else {
+                              handleOpenGmailBilling(ticket);
+                            }
                           }}
                           className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-300 border border-purple-500/30 text-xs font-bold"
                         >
                           <Mail className="w-3.5 h-3.5 text-purple-400" />
-                          <span>Enviar Correo (Gmail)</span>
+                          <span>Enviar Correo</span>
                         </button>
                       )}
 

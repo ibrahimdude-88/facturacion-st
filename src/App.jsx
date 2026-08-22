@@ -7,6 +7,7 @@ import AlbumModal from './components/Albums/AlbumModal';
 import TicketsTable from './components/Tickets/TicketsTable';
 import TicketUploadModal from './components/Tickets/TicketUploadModal';
 import TicketDrawer from './components/Tickets/TicketDrawer';
+import EmailBillingModal from './components/Tickets/EmailBillingModal';
 import ApiKeyModal from './components/ApiKeyModal';
 
 import { 
@@ -49,6 +50,7 @@ export default function App() {
   // Modals & Drawers UI State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [emailModalTicket, setEmailModalTicket] = useState(null);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
 
   // Album Modal state
@@ -465,6 +467,7 @@ export default function App() {
             onToggleBilled={handleToggleBilled}
             onSelectTicket={(ticket) => setSelectedTicket(ticket)}
             onDeleteTicket={handleDeleteTicket}
+            onOpenEmailModal={(ticket) => setEmailModalTicket(ticket)}
           />
         </main>
       </AuthGuard>
@@ -486,6 +489,14 @@ export default function App() {
         onClose={() => setSelectedTicket(null)}
         onSave={handleSaveEditedTicket}
         onDelete={handleDeleteTicket}
+        onOpenEmailModal={(ticket) => setEmailModalTicket(ticket)}
+      />
+
+      {/* Email Billing Modal */}
+      <EmailBillingModal
+        isOpen={Boolean(emailModalTicket)}
+        ticket={emailModalTicket}
+        onClose={() => setEmailModalTicket(null)}
       />
 
       {/* Album Create/Edit Modal */}
