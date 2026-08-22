@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, ZoomIn, ZoomOut, RotateCw, Maximize2, ExternalLink, QrCode, 
-  CheckCircle2, Plus, Save, Trash2, Calendar, Store, Calculator 
+  CheckCircle2, Plus, Save, Trash2, Calendar, Store, Calculator, Mail 
 } from 'lucide-react';
 import TicketItemRow from './TicketItemRow';
 import { formatCurrency } from '../Analytics/StatsOverview';
+import { handleOpenGmailBilling } from './TicketsTable';
 
 export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, onDelete }) {
   const [formData, setFormData] = useState(null);
@@ -239,24 +240,35 @@ export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, 
               )}
             </div>
 
-            {/* Quick Link to Billing Portal */}
+            {/* Quick Link to Billing Portal or Gmail Email */}
             {(() => {
               const raw = formData.billingUrl || formData.qrData;
-              if (!raw || typeof raw !== 'string') return null;
-              const clean = raw.trim();
-              if (!clean || clean === '#' || clean === '/') return null;
-              const targetUrl = /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
+              const hasUrl = raw && typeof raw === 'string' && raw.trim() && raw.trim() !== '#' && raw.trim() !== '/';
+              const targetUrl = hasUrl ? (/^https?:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`) : null;
+
+              if (targetUrl) {
+                return (
+                  <a
+                    href={targetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-sm"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Ir al Portal de Facturación Directo</span>
+                  </a>
+                );
+              }
 
               return (
-                <a
-                  href={targetUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-sm"
+                <button
+                  type="button"
+                  onClick={() => handleOpenGmailBilling(formData)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-sm"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Ir al Portal de Facturación Directo</span>
-                </a>
+                  <Mail className="w-4 h-4 text-purple-400" />
+                  <span>Enviar Correo de Facturación (Gmail)</span>
+                </button>
               );
             })()}
           </div>
@@ -298,7 +310,7 @@ export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, 
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
                     Álbum
@@ -318,13 +330,27 @@ export default function TicketDrawer({ isOpen, ticket, albums, onClose, onSave, 
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Enlace de Facturación (URL / QR)
+                    Enlace Portal de Facturación
                   </label>
                   <input
                     type="text"
                     value={formData.billingUrl || ''}
                     onChange={(e) => setFormData({ ...formData, billingUrl: e.target.value })}
                     placeholder="https://..."
+                    className="w-full px-3 py-2 rounded-xl glass-input text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-purple-300 mb-1 flex items-center space-x-1">
+                    <Mail className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Correo de Facturación</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.billingEmail || ''}
+                    onChange={(e) => setFormData({ ...formData, billingEmail: e.target.value })}
+                    placeholder="facturacion@empresa.com"
                     className="w-full px-3 py-2 rounded-xl glass-input text-xs"
                   />
                 </div>

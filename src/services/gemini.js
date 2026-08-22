@@ -18,7 +18,7 @@ if (isGeminiConfigured) {
   }
 }
 
-// Schema including Discount detection for tickets, percentages, and promotions
+// Schema including Discount and Billing Email detection
 const ticketResponseSchema = {
   type: "object",
   properties: {
@@ -42,13 +42,14 @@ const ticketResponseSchema = {
     iva: { type: "number" },
     tip: { type: "number" },
     total: { type: "number" },
-    billingUrl: { type: "string" }
+    billingUrl: { type: "string" },
+    billingEmail: { type: "string", description: "Correo electrónico de facturación o contacto impreso en el ticket (ej. facturacion@empresa.com), o cadena vacía si no hay." }
   },
   required: ["businessName", "purchaseDate", "items", "subtotal", "iva", "total"]
 };
 
 /**
- * Robust AI extraction with Percentage & Currency Discount math using gemini-3.5-flash
+ * Robust AI extraction with Discount & Billing Email detection using gemini-3.5-flash
  */
 export const extractTicketWithGemini = async (base64Image, mimeType = 'image/webp') => {
   if (!isGeminiConfigured || !genAI) {
@@ -60,11 +61,12 @@ export const extractTicketWithGemini = async (base64Image, mimeType = 'image/web
 - purchaseDate: Fecha de la compra en formato YYYY-MM-DD. Si no es visible, usa la fecha de hoy.
 - items: Lista completa de productos o servicios impresos con [{description, quantity, unitPrice, amount}].
 - subtotal: Subtotal numérico original PREVIO a aplicar cualquier descuento (suma de precios originales).
-- discount: Monto total en DINERO (MXN) de cualquier DESCUENTO, AHORRO, PROMOCIÓN, REBAJA o CUPÓN. Si el ticket muestra un porcentaje como "20% de descuento", "DTO 20%" o "-20%", DEBES CALCULAR LA CANTIDAD EXACTA EN DINERO (Ejemplo: si la suma original es $910 y el total final es $890, el discount es 20.00). Si la suma de productos a precio regular es mayor al total final pagado, la diferencia ES EL DISCOUNT.
+- discount: Monto total en DINERO (MXN) de cualquier DESCUENTO, AHORRO, PROMOCIÓN, REBAJA o CUPÓN. Si el ticket muestra un porcentaje como "20% de descuento", "DTO 20%" o "-20%", DEBES CALCULAR LA CANTIDAD EXACTA EN DINERO.
 - iva: IVA numérico (o 0 si no se desglose).
 - tip: Propina numérica (o 0).
 - total: Importe TOTAL final pagado impreso en el ticket.
-- billingUrl: Enlace o sitio web de facturación impreso en el ticket (si existe).`;
+- billingUrl: Enlace o sitio web de facturación impreso en el ticket (si existe).
+- billingEmail: Correo electrónico de facturación impreso en el ticket (ejemplo: facturacion@tienda.com, contacto@comercio.mx). Si no existe, dejar como "".`;
 
   const imagePart = {
     inlineData: {
@@ -134,8 +136,8 @@ const sanitizeTicketData = (data) => {
       }))
     : [];
 
-  const itemsRawSum = items.reduce((acc, i) => acc + (i.quantity * i.unitPrice), 0); // e.g. 180 + 630 + 100 = 910
-  const itemsAmountSum = items.reduce((acc, i) => acc + (i.amount || (i.quantity * i.unitPrice)), 0); // e.g. 180 + 630 + 80 = 890
+  const itemsRawSum = items.reduce((acc, i) => acc + (i.quantity * i.unitPrice), 0);
+  const itemsAmountSum = items.reduce((acc, i) => acc + (i.amount || (i.quantity * i.unitPrice)), 0);
   
   let rawSubtotal = Number(data.subtotal) || 0;
   let rawDiscount = Number(data.discount) || 0;
@@ -143,12 +145,10 @@ const sanitizeTicketData = (data) => {
   const rawTip = Number(data.tip) || 0;
   const rawTotal = Number(data.total) || 0;
 
-  // 1. If rawSubtotal is 0 or less than itemsRawSum, set rawSubtotal = itemsRawSum
   if (itemsRawSum > 0 && (rawSubtotal === 0 || rawSubtotal < itemsRawSum)) {
     rawSubtotal = itemsRawSum;
   }
 
-  // 2. Check if line item discount exists (itemsRawSum > itemsAmountSum)
   if (itemsRawSum > itemsAmountSum && (itemsRawSum - itemsAmountSum) > 0.05) {
     const lineDiscount = Number((itemsRawSum - itemsAmountSum).toFixed(2));
     if (rawDiscount < lineDiscount) {
@@ -156,7 +156,6 @@ const sanitizeTicketData = (data) => {
     }
   }
 
-  // 3. Check overall mathematical discount (rawSubtotal - rawTotal)
   if (rawSubtotal > 0 && rawTotal > 0 && (rawSubtotal - rawTotal) > 0.05) {
     const MathDiff = Number((rawSubtotal - rawTotal).toFixed(2));
     if (MathDiff > 0.05 && rawDiscount < MathDiff) {
@@ -176,6 +175,7 @@ const sanitizeTicketData = (data) => {
     tip: Number(rawTip.toFixed(2)),
     total: Number(rawTotal.toFixed(2)),
     billingUrl: data.billingUrl ? String(data.billingUrl).trim() : '',
+    billingEmail: data.billingEmail ? String(data.billingEmail).trim() : '',
   };
 };
 
@@ -190,6 +190,7 @@ const getUnparsedFallback = (reason = '') => {
     tip: 0,
     total: 0,
     billingUrl: '',
+    billingEmail: '',
     isSimulation: true,
     simulationReason: reason,
   };

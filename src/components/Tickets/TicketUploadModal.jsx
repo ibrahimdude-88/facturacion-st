@@ -180,6 +180,7 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
           tip: extractedInfo.tip || 0,
           total: extractedInfo.total || 0,
           billingUrl: extractedInfo.billingUrl || (decodedQR?.startsWith('http') ? decodedQR : ''),
+          billingEmail: extractedInfo.billingEmail || '',
           qrData: decodedQR || extractedInfo.billingUrl || '',
           isBilled: false,
           imageFile: compressed.file,
@@ -610,17 +611,33 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Enlace de Facturación Directo
-                    </label>
-                    <input
-                      type="text"
-                      value={activeTicket.billingUrl || ''}
-                      onChange={(e) => updateActiveTicketField('billingUrl', e.target.value)}
-                      placeholder="https://..."
-                      className="w-full px-3 py-2 rounded-xl glass-input text-xs"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Enlace Portal de Facturación
+                      </label>
+                      <input
+                        type="text"
+                        value={activeTicket.billingUrl || ''}
+                        onChange={(e) => updateActiveTicketField('billingUrl', e.target.value)}
+                        placeholder="https://..."
+                        className="w-full px-3 py-2 rounded-xl glass-input text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-purple-300 mb-1 flex items-center space-x-1">
+                        <Mail className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Correo de Facturación</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={activeTicket.billingEmail || ''}
+                        onChange={(e) => updateActiveTicketField('billingEmail', e.target.value)}
+                        placeholder="facturacion@empresa.com"
+                        className="w-full px-3 py-2 rounded-xl glass-input text-xs"
+                      />
+                    </div>
                   </div>
 
                   {/* Items List */}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   CheckCircle2, Clock, ExternalLink, Eye, Trash2, Search, Filter, 
-  Receipt, QrCode, FileText, ArrowUpDown, ChevronRight 
+  Receipt, QrCode, FileText, ArrowUpDown, ChevronRight, Mail, Download 
 } from 'lucide-react';
 import { formatCurrency } from '../Analytics/StatsOverview';
 
@@ -9,8 +9,58 @@ export const ensureAbsoluteUrl = (url) => {
   if (!url || typeof url !== 'string') return null;
   const trimmed = url.trim();
   if (!trimmed || trimmed === '#' || trimmed === '/' || trimmed.startsWith('javascript:')) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return null;
   return `https://${trimmed}`;
+};
+
+export const handleOpenGmailBilling = (ticket) => {
+  const email = ticket.billingEmail || '';
+  const biz = ticket.businessName || 'Comercio';
+  const date = ticket.purchaseDate || '';
+  const totalStr = formatCurrency(ticket.total || 0);
+
+  // 1. Download ticket photo automatically to user's downloads folder so it can be attached
+  if (ticket.imageUrl) {
+    try {
+      const link = document.createElement('a');
+      link.href = ticket.imageUrl;
+      const bizClean = biz.replace(/[^a-zA-Z0-9_-]/g, '_');
+      link.download = `Ticket_${bizClean}_${date}.webp`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.warn('No se pudo descargar automáticamente la foto:', err);
+    }
+  }
+
+  // 2. Build pre-filled Gmail Compose URL
+  const subject = encodeURIComponent(`Solicitud de Facturación (CFDI) — ${biz} (${date})`);
+  const bodyText = 
+`Estimado equipo de ${biz},
+
+Solicito amablemente la emisión de la factura electrónica (CFDI) correspondiente a mi compra realizada el ${date} por un importe total de ${totalStr}.
+
+Adjunto la fotografía del comprobante de compra que se ha descargado automáticamente en mi dispositivo.
+
+Datos de Facturación:
+- Nombre / Razón Social: [Tu Nombre o Razón Social]
+- RFC: [Tu RFC]
+- Uso de CFDI: G03 - Gastos en general
+- Régimen Fiscal: [Tu Régimen Fiscal]
+- Código Postal: [Tu Código Postal]
+
+Quedo a la espera de su amable respuesta.
+
+Atentamente,`;
+
+  const body = encodeURIComponent(bodyText);
+
+  const gmailUrl = email 
+    ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${subject}&body=${body}`
+    : `https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`;
+
+  window.open(gmailUrl, '_blank');
 };
 
 export default function TicketsTable({ 
@@ -37,7 +87,8 @@ export default function TicketsTable({
       const matchBiz = ticket.businessName?.toLowerCase().includes(q);
       const matchItem = ticket.items?.some(i => i.description?.toLowerCase().includes(q));
       const matchDate = ticket.purchaseDate?.includes(q);
-      if (!matchBiz && !matchItem && !matchDate) return false;
+      const matchEmail = ticket.billingEmail?.toLowerCase().includes(q);
+      if (!matchBiz && !matchItem && !matchDate && !matchEmail) return false;
     }
 
     return true;
@@ -116,7 +167,7 @@ export default function TicketsTable({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar negocio o producto..."
+              placeholder="Buscar negocio, producto o correo..."
               className="w-full pl-9 pr-3 py-2 rounded-xl glass-input text-xs"
             />
           </div>
@@ -139,7 +190,7 @@ export default function TicketsTable({
       <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-glass">
         {filteredTickets.length > 0 ? (
           <div>
-            {/* Desktop View Table (Hidden on mobile < 640px) */}
+            {/* Desktop View Table */}
             <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
@@ -149,7 +200,7 @@ export default function TicketsTable({
                     <th className="py-3 px-4">Fecha</th>
                     <th className="py-3 px-4">Álbum</th>
                     <th className="py-3 px-4 text-right">Total</th>
-                    <th className="py-3 px-4 text-center">Portal Facturación</th>
+                    <th className="py-3 px-4 text-center">Facturación (Portal / Correo)</th>
                     <th className="py-3 px-4 text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -179,7 +230,7 @@ export default function TicketsTable({
                           </button>
                         </td>
 
-                        {/* Business Name */}
+                        {/* Business Name & Discount */}
                         <td className="py-3.5 px-4">
                           <div className="flex items-center space-x-2.5">
                             {ticket.imageUrl ? (
@@ -206,6 +257,7 @@ export default function TicketsTable({
                               </div>
                               <span className="text-[10px] text-slate-400">
                                 {ticket.items?.length || 0} producto{(ticket.items?.length !== 1) ? 's' : ''}
+                                {ticket.billingEmail && ` | 📧 ${ticket.billingEmail}`}
                               </span>
                             </div>
                           </div>
@@ -228,7 +280,7 @@ export default function TicketsTable({
                           {formatCurrency(ticket.total)}
                         </td>
 
-                        {/* Billing URL Link */}
+                        {/* Billing Action: Web Portal OR Gmail Email */}
                         <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                           {validBillingUrl ? (
                             <a
@@ -240,10 +292,20 @@ export default function TicketsTable({
                               title={`Ir a ${validBillingUrl}`}
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
-                              <span>Facturar</span>
+                              <span>Portal Factura</span>
                             </a>
                           ) : (
-                            <span className="text-[11px] text-slate-500 italic">Sin portal</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenGmailBilling(ticket);
+                              }}
+                              className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[11px] font-semibold transition-all"
+                              title={ticket.billingEmail ? `Enviar correo a ${ticket.billingEmail} (adjunta foto autodescargada)` : 'Abrir Gmail para solicitar factura'}
+                            >
+                              <Mail className="w-3.5 h-3.5 text-purple-400" />
+                              <span>Enviar Correo</span>
+                            </button>
                           )}
                         </td>
 
@@ -273,7 +335,7 @@ export default function TicketsTable({
               </table>
             </div>
 
-            {/* Mobile Touch Cards View (Visible on mobile < 640px) */}
+            {/* Mobile Touch Cards View */}
             <div className="block sm:hidden divide-y divide-slate-800/80">
               {filteredTickets.map((ticket) => {
                 const albumObj = albums.find(a => a.id === ticket.albumId);
@@ -302,8 +364,13 @@ export default function TicketsTable({
                         </button>
 
                         <div>
-                          <h4 className="font-bold text-slate-100 text-sm leading-tight">
-                            {ticket.businessName || 'Comercio General'}
+                          <h4 className="font-bold text-slate-100 text-sm leading-tight flex items-center space-x-1.5">
+                            <span>{ticket.businessName || 'Comercio General'}</span>
+                            {Number(ticket.discount || 0) > 0 && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">
+                                -${ticket.discount}
+                              </span>
+                            )}
                           </h4>
                           <p className="text-[11px] text-slate-400 mt-0.5">
                             {ticket.purchaseDate} | {albumObj?.name || 'General'}
@@ -336,10 +403,19 @@ export default function TicketsTable({
                           className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/30 text-xs font-bold"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Facturar en Portal</span>
+                          <span>Portal Web</span>
                         </a>
                       ) : (
-                        <span className="text-[11px] text-slate-500 italic">Sin enlace directo</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenGmailBilling(ticket);
+                          }}
+                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-300 border border-purple-500/30 text-xs font-bold"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Enviar Correo (Gmail)</span>
+                        </button>
                       )}
 
                       <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
