@@ -8,6 +8,7 @@ import TicketsTable from './components/Tickets/TicketsTable';
 import TicketUploadModal from './components/Tickets/TicketUploadModal';
 import TicketDrawer from './components/Tickets/TicketDrawer';
 import EmailBillingModal from './components/Tickets/EmailBillingModal';
+import AdminDashboardModal from './components/Admin/AdminDashboardModal';
 import ApiKeyModal from './components/ApiKeyModal';
 
 import { 
@@ -51,6 +52,7 @@ export default function App() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [emailModalTicket, setEmailModalTicket] = useState(null);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
 
   // Album Modal state
@@ -431,6 +433,7 @@ export default function App() {
         onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
       />
 
       <AuthGuard user={user} isDemoUser={isDemoUser} onDemoLogin={handleDemoLogin}>
@@ -497,6 +500,15 @@ export default function App() {
         isOpen={Boolean(emailModalTicket)}
         ticket={emailModalTicket}
         onClose={() => setEmailModalTicket(null)}
+      />
+
+      {/* Admin Dashboard Modal (zippo0189) */}
+      <AdminDashboardModal
+        isOpen={isAdminModalOpen}
+        user={user}
+        onClose={() => setIsAdminModalOpen(false)}
+        currentAlbums={albums}
+        currentTickets={tickets}
       />
 
       {/* Album Create/Edit Modal */}

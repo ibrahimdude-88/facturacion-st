@@ -1,9 +1,11 @@
 import React from 'react';
-import { Receipt, Sparkles, LogOut, ShieldCheck, AlertTriangle, Sun, Moon } from 'lucide-react';
+import { Receipt, Sparkles, LogOut, ShieldCheck, AlertTriangle, Sun, Moon, Crown } from 'lucide-react';
 import { isFirebaseConfigured } from '../services/firebase';
 import { isGeminiConfigured } from '../services/gemini';
 
-export default function Navbar({ user, theme, onToggleTheme, onLogout, openApiKeyInfo }) {
+export default function Navbar({ user, theme, onToggleTheme, onLogout, openApiKeyInfo, onOpenAdminModal }) {
+  const isAdmin = user?.email && user.email.toLowerCase().includes('zippo0189');
+
   return (
     <header className="sticky top-0 z-30 glass-panel border-b border-slate-800/80 px-4 lg:px-8 py-3.5 transition-all">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -47,6 +49,18 @@ export default function Navbar({ user, theme, onToggleTheme, onLogout, openApiKe
               </>
             )}
           </button>
+
+          {/* Admin Panel Button (Exclusively for zippo0189) */}
+          {isAdmin && (
+            <button
+              onClick={onOpenAdminModal}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition-all text-xs font-extrabold shadow-glow-amber active:scale-95"
+              title="Abrir Reporte General de Administración (zippo0189)"
+            >
+              <Crown className="w-4 h-4 text-amber-400 animate-bounce" />
+              <span>Panel Admin</span>
+            </button>
+          )}
 
           {/* Environment Status Badge */}
           <button
