@@ -125,6 +125,35 @@ export default function App() {
     setSelectedAlbumId(null);
     setSelectedTicket(null);
 
+    // 1. Immediately load local storage state on refresh for instant render
+    const savedAlbums = localStorage.getItem(`fs_albums_${activeUid}`);
+    const savedTickets = localStorage.getItem(`fs_tickets_${activeUid}`);
+    const defaultCleanAlbum = [{ id: 'alb_gen_' + activeUid.slice(0, 6), userId: activeUid, name: 'General', createdAt: new Date().toISOString() }];
+
+    if (savedAlbums) {
+      try {
+        const parsed = JSON.parse(savedAlbums);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAlbums(parsed);
+        } else {
+          setAlbums(defaultCleanAlbum);
+        }
+      } catch (e) {
+        setAlbums(defaultCleanAlbum);
+      }
+    } else {
+      setAlbums(defaultCleanAlbum);
+    }
+
+    if (savedTickets) {
+      try {
+        const parsed = JSON.parse(savedTickets);
+        if (Array.isArray(parsed)) {
+          setTickets(parsed);
+        }
+      } catch (e) {}
+    }
+
     const isRealUser = isFirebaseConfigured && !isDemoUser && activeUid !== 'demo_user_123';
 
     if (isRealUser) {
@@ -137,10 +166,30 @@ export default function App() {
           setAlbums(list);
           localStorage.setItem(`fs_albums_${activeUid}`, JSON.stringify(list));
         } else {
-          // Initialize clean default "General" album for new user
-          const defaultClean = [{ id: 'alb_gen_' + activeUid.slice(0, 6), userId: activeUid, name: 'General', createdAt: new Date().toISOString() }];
-          setAlbums(defaultClean);
-          localStorage.setItem(`fs_albums_${activeUid}`, JSON.stringify(defaultClean));
+          // Check if local cache has albums created locally before overwriting with empty
+          const cached = localStorage.getItem(`fs_albums_${activeUid}`);
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setAlbums(parsed);
+                // Upload any pending local album to Firestore
+                parsed.forEach(alb => {
+                  if (alb.id.startsWith('alb_')) {
+                    addDoc(collection(db, 'albums'), {
+                      userId: activeUid,
+                      name: alb.name,
+                      createdAt: alb.createdAt || new Date().toISOString(),
+                      isArchived: Boolean(alb.isArchived)
+                    }).catch(() => {});
+                  }
+                });
+                return;
+              }
+            } catch (e) {}
+          }
+          setAlbums(defaultCleanAlbum);
+          localStorage.setItem(`fs_albums_${activeUid}`, JSON.stringify(defaultCleanAlbum));
         }
       }, (err) => console.warn('Snapshot albums:', err));
 
@@ -149,36 +198,31 @@ export default function App() {
       const qTickets = query(ticketsRef, where('userId', '==', activeUid));
       const unsubTickets = onSnapshot(qTickets, (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setTickets(list);
-        localStorage.setItem(`fs_tickets_${activeUid}`, JSON.stringify(list));
+        if (list.length > 0) {
+          setTickets(list);
+          localStorage.setItem(`fs_tickets_${activeUid}`, JSON.stringify(list));
+        }
       }, (err) => console.warn('Snapshot tickets:', err));
 
       return () => {
         unsubAlbums();
         unsubTickets();
       };
-    } else {
-      // Local Storage isolated by UID
-      const savedAlbums = localStorage.getItem(`fs_albums_${activeUid}`);
-      const savedTickets = localStorage.getItem(`fs_tickets_${activeUid}`);
-
-      const defaultCleanAlbum = [{ id: 'alb_gen_' + activeUid.slice(0, 6), userId: activeUid, name: 'General', createdAt: new Date().toISOString() }];
-      
-      setAlbums(savedAlbums ? JSON.parse(savedAlbums) : defaultCleanAlbum);
-      setTickets(savedTickets ? JSON.parse(savedTickets) : []);
     }
   }, [user?.uid, isDemoUser]);
 
   // ----------------------------------------------------
-  // Album Actions (Multi-User Safe)
+  // Album Actions (Multi-User Safe & Persistent)
   // ----------------------------------------------------
-  const handleCreateAlbum = (name) => {
+  const handleCreateAlbum = async (name) => {
     const activeUserId = user?.uid || 'guest';
+    const tempId = 'alb_' + Date.now();
     const newAlbum = {
-      id: 'alb_' + Date.now(),
+      id: tempId,
       userId: activeUserId,
       name,
       createdAt: new Date().toISOString(),
+      isArchived: false,
     };
 
     const updatedAlbums = [...albums, newAlbum];
@@ -186,11 +230,22 @@ export default function App() {
 
     const isRealUser = isFirebaseConfigured && !isDemoUser && user?.uid && user.uid !== 'demo_user_123';
     if (isRealUser) {
-      addDoc(collection(db, 'albums'), {
-        userId: user.uid,
-        name,
-        createdAt: new Date().toISOString(),
-      }).catch(err => console.warn('Firestore album create notice:', err.message));
+      try {
+        const docRef = await addDoc(collection(db, 'albums'), {
+          userId: user.uid,
+          name,
+          createdAt: new Date().toISOString(),
+          isArchived: false,
+        });
+
+        setAlbums(prev => {
+          const list = prev.map(a => a.id === tempId ? { ...a, id: docRef.id } : a);
+          localStorage.setItem(`fs_albums_${activeUserId}`, JSON.stringify(list));
+          return list;
+        });
+      } catch (err) {
+        console.warn('Firestore album create notice:', err.message);
+      }
     }
   };
 
