@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, Upload, Camera, Sparkles, QrCode, Image as ImageIcon, 
-  CheckCircle2, Loader2, AlertCircle, ExternalLink, Plus, Trash2, Folder, Layers, Clock, ShieldAlert 
+  CheckCircle2, Loader2, AlertCircle, ExternalLink, Plus, Trash2, Folder, Layers, Clock, ShieldAlert, Mail 
 } from 'lucide-react';
 import { compressTicketImage } from '../../services/imageCompressor';
 import { scanQRCodeFromImage } from '../../services/qrScanner';
