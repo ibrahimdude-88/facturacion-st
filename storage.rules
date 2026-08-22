@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Reglas para imágenes comprimidas de tickets por usuario
+    match /users/{userId}/tickets/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId 
+                   && request.resource.size < 2 * 1024 * 1024 // Tamaño máximo < 2 MB
+                   && request.resource.contentType.matches('image/.*');
+    }
+    
+  }
+}
