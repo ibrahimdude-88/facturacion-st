@@ -8,11 +8,22 @@ export default function AlbumGrid({
   selectedAlbumId, 
   onSelectAlbum, 
   onUploadClick,
+  onOpenUpload,
   onCreateAlbumClick, 
+  onCreateAlbum,
   onEditAlbumClick, 
+  onEditAlbum,
   onDeleteAlbumClick,
-  onArchiveAlbumClick
+  onDeleteAlbum,
+  onArchiveAlbumClick,
+  onToggleArchiveAlbum
 }) {
+  const handleUpload = onUploadClick || onOpenUpload;
+  const handleCreate = onCreateAlbumClick || onCreateAlbum;
+  const handleEdit = onEditAlbumClick || onEditAlbum;
+  const handleDelete = onDeleteAlbumClick || onDeleteAlbum;
+  const handleArchive = onArchiveAlbumClick || onToggleArchiveAlbum;
+
   const [tabFilter, setTabFilter] = useState('active'); // 'active' | 'archived'
 
   // Classify active vs archived albums
@@ -73,7 +84,7 @@ export default function AlbumGrid({
         <div className="flex items-center space-x-2">
           {/* Main Scan / Upload Ticket Button */}
           <button
-            onClick={onUploadClick}
+            onClick={handleUpload}
             className="flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-glow transition-all active:scale-95"
           >
             <Upload className="w-4 h-4" />
@@ -81,8 +92,8 @@ export default function AlbumGrid({
           </button>
 
           <button
-            onClick={onCreateAlbumClick}
-            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all"
+            onClick={handleCreate}
+            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer active:scale-95"
           >
             <Plus className="w-4 h-4 text-blue-400" />
             <span className="hidden sm:inline">Nuevo Álbum</span>
@@ -165,11 +176,11 @@ export default function AlbumGrid({
 
                 {/* Album Action Buttons */}
                 <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                  {!isArchived && isFullyBilled && (
+                  {!isArchived && isFullyBilled && handleArchive && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onArchiveAlbumClick(album.id);
+                        handleArchive(album.id);
                       }}
                       className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-colors"
                       title="Archivar álbum facturado"
@@ -177,26 +188,30 @@ export default function AlbumGrid({
                       <Archive className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditAlbumClick(album);
-                    }}
-                    className="p-1 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-colors"
-                    title="Renombrar álbum"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteAlbumClick(album);
-                    }}
-                    className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
-                    title="Eliminar álbum"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {handleEdit && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(album);
+                      }}
+                      className="p-1 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-colors"
+                      title="Renombrar álbum"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {handleDelete && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(album.id || album);
+                      }}
+                      className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                      title="Eliminar álbum"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -250,7 +265,7 @@ export default function AlbumGrid({
           <div className="col-span-full p-8 text-center glass-panel rounded-xl border border-slate-800 text-slate-400 text-xs">
             <FolderArchive className="w-8 h-8 mx-auto mb-2 text-slate-500" />
             <p>No tienes álbumes archivados aún.</p>
-            <p className="text-[11px] text-slate-500 mt-1">Los álbumes facturados al 100% o descargados en paquete ZIP se archivan automáticamente aquí.</p>
+            <p className="text-[11px] text-slate-500 mt-1">Los álbumes facturados al 100% o descargados en paquete ZIP se archivarán automáticamente aquí.</p>
           </div>
         )}
 
