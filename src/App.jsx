@@ -208,11 +208,12 @@ export default function App() {
     const updatedAlbums = [...albums, newAlbum];
     updateLocalAndCloudState(updatedAlbums, null);
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    const shouldWriteToFirestore = isFirebaseConfigured && Boolean(db);
+    if (shouldWriteToFirestore) {
       try {
         const docRef = await addDoc(collection(db, 'albums'), {
           userId: activeUserId,
+          userEmail: user?.email || (isDemoUser ? 'demo@facturasnap.ai' : 'Invitado'),
           name: cleanName,
           createdAt: new Date().toISOString(),
           isArchived: false,
@@ -303,6 +304,7 @@ export default function App() {
       id: newTicketId,
       albumId: ticketData.albumId || (albums[0]?.id || 'alb_1'),
       userId: activeUserId,
+      userEmail: user?.email || (isDemoUser ? 'demo@facturasnap.ai' : 'Invitado'),
       imageUrl: ticketData.imageUrl || '',
       businessName: ticketData.businessName || 'Comercio General',
       purchaseDate: ticketData.purchaseDate || new Date().toISOString().split('T')[0],
@@ -323,13 +325,13 @@ export default function App() {
     const updatedTickets = [payload, ...tickets];
     updateLocalAndCloudState(null, updatedTickets);
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    const shouldWriteToFirestore = isFirebaseConfigured && Boolean(db);
+    if (shouldWriteToFirestore) {
       try {
         const { id, ...docData } = payload;
         const docRef = await addDoc(collection(db, 'tickets'), docData);
 
-        if (ticketData.imageFile) {
+        if (ticketData.imageFile && storage) {
           const fileRef = ref(storage, `users/${activeUserId}/tickets/${docRef.id}_${Date.now()}.webp`);
           const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
           const storageUrl = await getDownloadURL(uploadSnap.ref);

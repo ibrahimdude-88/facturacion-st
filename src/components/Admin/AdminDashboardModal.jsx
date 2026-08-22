@@ -3,7 +3,7 @@ import {
   X, ShieldCheck, Users, Receipt, Folder, DollarSign, Tag, TrendingUp, 
   Search, RefreshCw, Calendar, Store, CheckCircle2, Clock, Crown, BarChart2 
 } from 'lucide-react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../services/firebase';
 import { formatCurrency } from '../Analytics/StatsOverview';
 
@@ -13,36 +13,40 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
   const [allAlbums, setAllAlbums] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
 
-  const fetchGlobalData = async () => {
+  useEffect(() => {
+    if (!isOpen) return;
+
     setLoading(true);
-    try {
-      if (isFirebaseConfigured && db) {
-        const [albumsSnap, ticketsSnap] = await Promise.all([
-          getDocs(collection(db, 'albums')),
-          getDocs(collection(db, 'tickets'))
-        ]);
 
-        const albumsList = albumsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const ticketsList = ticketsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (isFirebaseConfigured && db) {
+      // 1. Realtime Listeners for ALL Albums across ALL Users
+      const unsubAlbums = onSnapshot(collection(db, 'albums'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllAlbums(list);
+        setLoading(false);
+      }, (err) => {
+        console.warn('Realtime albums notice:', err.message);
+        setLoading(false);
+      });
 
-        setAllAlbums(albumsList.length > 0 ? albumsList : currentAlbums);
-        setAllTickets(ticketsList.length > 0 ? ticketsList : currentTickets);
-      } else {
-        setAllAlbums(currentAlbums || []);
-        setAllTickets(currentTickets || []);
-      }
-    } catch (err) {
-      console.warn('Fallback a datos locales del admin:', err.message);
+      // 2. Realtime Listeners for ALL Tickets across ALL Users
+      const unsubTickets = onSnapshot(collection(db, 'tickets'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllTickets(list);
+        setLoading(false);
+      }, (err) => {
+        console.warn('Realtime tickets notice:', err.message);
+        setLoading(false);
+      });
+
+      return () => {
+        unsubAlbums();
+        unsubTickets();
+      };
+    } else {
       setAllAlbums(currentAlbums || []);
       setAllTickets(currentTickets || []);
-    } finally {
       setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchGlobalData();
     }
   }, [isOpen]);
 
@@ -53,10 +57,12 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
 
   allTickets.forEach(tkt => {
     const uid = tkt.userId || 'guest';
+    const emailToDisplay = tkt.userEmail || (uid === user?.uid ? user.email : (uid.length > 15 ? `Usuario (${uid.slice(0, 8)}...)` : uid));
+
     if (!userStatsMap[uid]) {
       userStatsMap[uid] = {
         userId: uid,
-        email: uid === user?.uid ? (user.email || 'Admin') : (uid.length > 15 ? `Usuario (${uid.slice(0, 8)}...)` : uid),
+        email: emailToDisplay,
         ticketCount: 0,
         albumCount: 0,
         totalAmount: 0,
@@ -64,6 +70,10 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         billedCount: 0,
         latestDate: null,
       };
+    }
+
+    if (tkt.userEmail && userStatsMap[uid].email.startsWith('Usuario (')) {
+      userStatsMap[uid].email = tkt.userEmail;
     }
 
     userStatsMap[uid].ticketCount += 1;
@@ -79,10 +89,12 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
 
   allAlbums.forEach(alb => {
     const uid = alb.userId || 'guest';
+    const emailToDisplay = alb.userEmail || (uid === user?.uid ? user.email : (uid.length > 15 ? `Usuario (${uid.slice(0, 8)}...)` : uid));
+
     if (!userStatsMap[uid]) {
       userStatsMap[uid] = {
         userId: uid,
-        email: uid === user?.uid ? (user.email || 'Admin') : (uid.length > 15 ? `Usuario (${uid.slice(0, 8)}...)` : uid),
+        email: emailToDisplay,
         ticketCount: 0,
         albumCount: 0,
         totalAmount: 0,
