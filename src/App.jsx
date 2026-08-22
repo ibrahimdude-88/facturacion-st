@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import AuthGuard from './components/AuthGuard';
 import StatsOverview from './components/Analytics/StatsOverview';
@@ -45,6 +45,7 @@ export default function App() {
   const [albums, setAlbums] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
+  const hasInitializedDefault = useRef(false);
 
   // Modals & Drawers UI State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -65,6 +66,7 @@ export default function App() {
           setTickets([]);
           setSelectedAlbumId(null);
           setSelectedTicket(null);
+          hasInitializedDefault.current = false;
         }
       });
       return () => unsubscribe();
@@ -93,6 +95,7 @@ export default function App() {
     setTickets([]);
     setSelectedAlbumId(null);
     setSelectedTicket(null);
+    hasInitializedDefault.current = false;
   };
 
   // 2. Pure Cloud Firestore Realtime Sync
@@ -118,10 +121,10 @@ export default function App() {
       const qAlbums = query(albumsRef, where('userId', '==', activeUid));
       const unsubAlbums = onSnapshot(qAlbums, (snapshot) => {
         const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (list.length > 0) {
-          setAlbums(list);
-        } else {
-          // Initialize clean default "General" album in Firestore for new accounts
+        setAlbums(list);
+
+        if (list.length === 0 && !hasInitializedDefault.current) {
+          hasInitializedDefault.current = true;
           addDoc(collection(db, 'albums'), {
             userId: activeUid,
             name: 'General',

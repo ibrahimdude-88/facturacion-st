@@ -2,18 +2,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Reglas para la colección 'albums'
+    // Reglas para la colección 'albums' (Permite lectura y escritura a usuarios autenticados)
     match /albums/{albumId} {
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read, write: if request.auth != null;
     }
     
-    // Reglas para la colección 'tickets'
+    // Reglas para la colección 'tickets' (Permite lectura y escritura a usuarios autenticados)
     match /tickets/{ticketId} {
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read, write: if request.auth != null;
     }
     
   }
