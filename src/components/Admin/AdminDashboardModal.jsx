@@ -13,9 +13,12 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
   const [allAlbums, setAllAlbums] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
 
+  const [fetchError, setFetchError] = useState(null);
+
   const fetchGlobalData = async () => {
     if (!isOpen) return;
     setLoading(true);
+    setFetchError(null);
 
     if (isFirebaseConfigured && db) {
       try {
@@ -26,6 +29,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         setAllTickets(ticketsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (err) {
         console.warn('Error fetching global data:', err.message);
+        setFetchError(err.message);
       } finally {
         setLoading(false);
       }
@@ -40,6 +44,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
     if (!isOpen) return;
 
     setLoading(true);
+    setFetchError(null);
 
     if (isFirebaseConfigured && db) {
       // 1. Realtime Listeners for ALL Albums across ALL Users
@@ -49,6 +54,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         setLoading(false);
       }, (err) => {
         console.warn('Realtime albums notice:', err.message);
+        setFetchError(`Permiso/Lectura Álbumes: ${err.message}`);
         setLoading(false);
       });
 
@@ -59,6 +65,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         setLoading(false);
       }, (err) => {
         console.warn('Realtime tickets notice:', err.message);
+        setFetchError(`Permiso/Lectura Tickets: ${err.message}`);
         setLoading(false);
       });
 
@@ -95,7 +102,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
       };
     }
 
-    if (tkt.userEmail && userStatsMap[uid].email.startsWith('Usuario (')) {
+    if (tkt.userEmail && (!userStatsMap[uid].email || userStatsMap[uid].email.includes('Usuario (') || userStatsMap[uid].email === uid || !userStatsMap[uid].email.includes('@'))) {
       userStatsMap[uid].email = tkt.userEmail;
     }
 
@@ -125,6 +132,8 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         billedCount: 0,
         latestDate: null,
       };
+    } else if (alb.userEmail && (!userStatsMap[uid].email || userStatsMap[uid].email.includes('Usuario (') || userStatsMap[uid].email === uid || !userStatsMap[uid].email.includes('@'))) {
+      userStatsMap[uid].email = alb.userEmail;
     }
     userStatsMap[uid].albumCount += 1;
   });
@@ -199,6 +208,19 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         {/* Scrollable Dashboard Body */}
         <div className="flex-1 overflow-y-auto space-y-6 pr-1">
           
+          {fetchError && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
+              <span className="font-bold">Aviso de Sincronización Nube:</span>
+              <span>{fetchError}. Verifica las Reglas de Seguridad de Cloud Firestore (deben permitir lectura de la colección 'tickets' y 'albums').</span>
+            </div>
+          )}
+
+          {!isFirebaseConfigured && (
+            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs">
+              <span className="font-bold">Modo Almacenamiento Local:</span> Mostrando únicamente tickets y álbumes cargados en la sesión actual.
+            </div>
+          )}
+
           {/* Global KPI Cards Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             
