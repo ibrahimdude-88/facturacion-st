@@ -13,6 +13,29 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
   const [allAlbums, setAllAlbums] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
 
+  const fetchGlobalData = async () => {
+    if (!isOpen) return;
+    setLoading(true);
+
+    if (isFirebaseConfigured && db) {
+      try {
+        const albumsSnap = await getDocs(collection(db, 'albums'));
+        setAllAlbums(albumsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        const ticketsSnap = await getDocs(collection(db, 'tickets'));
+        setAllTickets(ticketsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (err) {
+        console.warn('Error fetching global data:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setAllAlbums(currentAlbums || []);
+      setAllTickets(currentTickets || []);
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -48,7 +71,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
       setAllTickets(currentTickets || []);
       setLoading(false);
     }
-  }, [isOpen]);
+  }, [isOpen, currentAlbums, currentTickets]);
 
   if (!isOpen) return null;
 
