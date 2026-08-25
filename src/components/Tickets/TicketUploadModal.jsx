@@ -370,29 +370,69 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
               <div
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-6 sm:p-10 text-center transition-all ${
                   isCooldownActive
                     ? 'border-slate-800 bg-slate-900/20 opacity-60 cursor-not-allowed'
-                    : 'border-slate-700 hover:border-blue-500 bg-slate-900/40 hover:bg-blue-600/5 group cursor-pointer'
+                    : 'border-slate-700 hover:border-blue-500 bg-slate-900/40 hover:bg-blue-600/5 group'
                 }`}
-                onClick={() => !isCooldownActive && fileInputRef.current?.click()}
               >
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Upload className="w-8 h-8" />
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-600/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Upload className="w-7 h-7" />
                 </div>
                 
-                <h4 className="mt-4 text-base font-bold text-slate-200">
+                <h4 className="mt-3 text-base font-bold text-slate-200">
                   {isCooldownActive
                     ? `Tiempo de espera activo (${cooldownSeconds}s)`
-                    : `Arrastra uno o varios tickets aquí (Máximo 15 por minuto)`}
+                    : `Cargar o Escanear Comprobantes Fiscales`}
                 </h4>
                 
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
                   {isCooldownActive
                     ? `Podrás subir más comprobantes en ${cooldownSeconds} segundos.`
-                    : `Selección múltiple soportada.`}
+                    : `Toma una fotografía directa desde tu celular o sube archivos desde tu galería/PC.`}
                 </p>
 
+                {/* 2 Primary Action Buttons: Mobile Camera vs File Gallery */}
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
+                  
+                  {/* Option 1: Mobile Camera Direct */}
+                  <button
+                    type="button"
+                    disabled={isCooldownActive}
+                    onClick={() => !isCooldownActive && cameraInputRef.current?.click()}
+                    className={`p-3.5 rounded-xl border flex items-center justify-center space-x-3 font-bold text-xs shadow-lg transition-all ${
+                      isCooldownActive
+                        ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-500/40 shadow-emerald-950/40 hover:scale-[1.02]'
+                    }`}
+                  >
+                    <Camera className="w-5 h-5 shrink-0" />
+                    <div className="text-left">
+                      <div className="font-extrabold text-xs">Usar Cámara Móvil</div>
+                      <div className="text-[10px] text-emerald-100 font-normal">Tomar foto directa</div>
+                    </div>
+                  </button>
+
+                  {/* Option 2: File Gallery / PC Dropzone */}
+                  <button
+                    type="button"
+                    disabled={isCooldownActive}
+                    onClick={() => !isCooldownActive && fileInputRef.current?.click()}
+                    className={`p-3.5 rounded-xl border flex items-center justify-center space-x-3 font-bold text-xs transition-all ${
+                      isCooldownActive
+                        ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                        : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700 hover:border-blue-500/50 hover:scale-[1.02]'
+                    }`}
+                  >
+                    <ImageIcon className="w-5 h-5 text-blue-400 shrink-0" />
+                    <div className="text-left">
+                      <div className="font-extrabold text-xs">Galería / Archivos</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Selección múltiple o arrastrar</div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Hidden File Inputs */}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -403,35 +443,15 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
                   className="hidden"
                 />
 
-                {/* Mobile Camera Option */}
-                <div className="mt-6 flex justify-center">
-                  <button
-                    type="button"
-                    disabled={isCooldownActive}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isCooldownActive) cameraInputRef.current?.click();
-                    }}
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold border ${
-                      isCooldownActive
-                        ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                    }`}
-                  >
-                    <Camera className="w-4 h-4 text-blue-400" />
-                    <span>Seleccionar / Tomar Fotos</span>
-                  </button>
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    disabled={isCooldownActive}
-                    capture="environment"
-                    onChange={(e) => e.target.files?.length > 0 && handleMultipleFilesSelect(e.target.files)}
-                    className="hidden"
-                  />
-                </div>
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  disabled={isCooldownActive}
+                  capture="environment"
+                  onChange={(e) => e.target.files?.length > 0 && handleMultipleFilesSelect(e.target.files)}
+                  className="hidden"
+                />
               </div>
 
               {/* Features list */}
