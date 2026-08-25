@@ -31,6 +31,7 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
   // List of processed tickets in batch
   const [batchTickets, setBatchTickets] = useState([]);
   const [activeReviewIndex, setActiveReviewIndex] = useState(0);
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -282,8 +283,6 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
   };
 
   // Save ALL tickets in batch asynchronously to Firebase Cloud
-  const [isSavingBatch, setIsSavingBatch] = useState(false);
-
   const handleSaveAllBatch = async () => {
     if (isSavingBatch || batchTickets.length === 0) return;
     setIsSavingBatch(true);
