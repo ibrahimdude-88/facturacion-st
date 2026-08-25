@@ -108,6 +108,81 @@ export default function App() {
     }
   };
 
+  // Auto-sync any LocalStorage tickets or albums to Cloud Firestore
+  const syncLocalStorageToFirestore = async (activeUser) => {
+    if (!isFirebaseConfigured || !db || !activeUser?.uid) return;
+
+    try {
+      // 1. Register User Profile in Firestore
+      await setDoc(doc(db, 'user_profiles', activeUser.uid), {
+        uid: activeUser.uid,
+        email: activeUser.email || 'Sin correo',
+        displayName: activeUser.displayName || activeUser.email || 'Usuario Google',
+        photoURL: activeUser.photoURL || null,
+        lastActive: new Date().toISOString(),
+      }, { merge: true });
+
+      // 2. Scan all localStorage keys for tickets/albums across ALL sessions stored on this device
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        
+        if (key && key.startsWith('fs_tickets_')) {
+          const targetUid = key.replace('fs_tickets_', '');
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const localTkts = JSON.parse(raw);
+              if (Array.isArray(localTkts) && localTkts.length > 0) {
+                const snap = await getDocs(query(collection(db, 'tickets'), where('userId', '==', targetUid)));
+                const remoteIds = new Set(snap.docs.map(d => d.id));
+
+                for (const tkt of localTkts) {
+                  if (!remoteIds.has(tkt.id)) {
+                    const { id, ...cleanData } = tkt;
+                    await addDoc(collection(db, 'tickets'), {
+                      ...cleanData,
+                      userId: targetUid,
+                      userEmail: activeUser.email || tkt.userEmail || 'Usuario',
+                      createdAt: tkt.createdAt || new Date().toISOString(),
+                    });
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+        }
+
+        if (key && key.startsWith('fs_albums_')) {
+          const targetUid = key.replace('fs_albums_', '');
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const localAlbs = JSON.parse(raw);
+              if (Array.isArray(localAlbs) && localAlbs.length > 0) {
+                const snap = await getDocs(query(collection(db, 'albums'), where('userId', '==', targetUid)));
+                const remoteNames = new Set(snap.docs.map(d => d.data().name));
+
+                for (const alb of localAlbs) {
+                  if (!remoteNames.has(alb.name)) {
+                    await addDoc(collection(db, 'albums'), {
+                      userId: targetUid,
+                      userEmail: activeUser.email || alb.userEmail || 'Usuario',
+                      name: alb.name,
+                      createdAt: alb.createdAt || new Date().toISOString(),
+                      isArchived: Boolean(alb.isArchived)
+                    });
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Auto-sync notice:', err.message);
+    }
+  };
+
   // 2. Hybrid Persistence Engine (Instant Local Restore + Firestore Realtime Sync)
   useEffect(() => {
     const activeUid = user?.uid;
@@ -119,6 +194,9 @@ export default function App() {
       setSelectedTicket(null);
       return;
     }
+
+    // Trigger background cloud sync for all local data
+    syncLocalStorageToFirestore(user);
 
     // 1. Immediately restore cached local data for 0ms render on refresh (F5)
     const cachedAlbums = localStorage.getItem(`fs_albums_${activeUid}`);
