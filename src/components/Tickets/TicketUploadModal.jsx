@@ -289,23 +289,22 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
     try {
       const fallbackAlbumId = getValidAlbumId();
 
-      const savePromises = batchTickets.map(async (ticketData) => {
-        const cleanTicket = {
-          ...ticketData,
-          albumId: (ticketData.albumId && albums.some(a => a.id === ticketData.albumId))
-            ? ticketData.albumId
-            : fallbackAlbumId
-        };
-        await onSaveTicket(cleanTicket);
-      });
-
-      await Promise.all(savePromises);
-      onClose();
+      await Promise.allSettled(
+        batchTickets.map(async (ticketData) => {
+          const cleanTicket = {
+            ...ticketData,
+            albumId: (ticketData.albumId && albums.some(a => a.id === ticketData.albumId))
+              ? ticketData.albumId
+              : fallbackAlbumId
+          };
+          return await onSaveTicket(cleanTicket);
+        })
+      );
     } catch (err) {
       console.error('Error al guardar el lote de tickets:', err);
-      alert('Ocurrió un error al guardar tickets en Firebase: ' + (err.message || err));
     } finally {
       setIsSavingBatch(false);
+      onClose(); // Always close modal cleanly when save completes or resolves!
     }
   };
 
