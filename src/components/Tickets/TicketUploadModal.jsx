@@ -173,7 +173,7 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
 
         return {
           id: 'temp_' + i + '_' + Date.now(),
-          albumId: selectedAlbumId || (albums[0]?.id || 'alb_1'),
+          albumId: getValidAlbumId(),
           businessName: extractedInfo.businessName || `Ticket #${i + 1}`,
           purchaseDate: extractedInfo.purchaseDate || new Date().toISOString().split('T')[0],
           items: extractedInfo.items || [],
@@ -271,16 +271,41 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
     updateActiveTicketField('items', updatedItems);
   };
 
-  // Save ALL tickets in batch instantly
-  const handleSaveAllBatch = () => {
+  const getValidAlbumId = () => {
+    if (selectedAlbumId && albums.some(a => a.id === selectedAlbumId)) {
+      return selectedAlbumId;
+    }
+    if (albums && albums.length > 0) {
+      return albums[0].id;
+    }
+    return null;
+  };
+
+  // Save ALL tickets in batch asynchronously to Firebase Cloud
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
+
+  const handleSaveAllBatch = async () => {
+    if (isSavingBatch || batchTickets.length === 0) return;
+    setIsSavingBatch(true);
     try {
-      batchTickets.forEach(ticketData => {
-        onSaveTicket(ticketData);
-      });
-      onClose(); // Close modal INSTANTLY
-    } catch (err) {
-      console.error(err);
+      const fallbackAlbumId = getValidAlbumId();
+
+      for (let i = 0; i < batchTickets.length; i++) {
+        const ticketData = batchTickets[i];
+        const cleanTicket = {
+          ...ticketData,
+          albumId: (ticketData.albumId && albums.some(a => a.id === ticketData.albumId))
+            ? ticketData.albumId
+            : fallbackAlbumId
+        };
+        await onSaveTicket(cleanTicket);
+      }
       onClose();
+    } catch (err) {
+      console.error('Error al guardar el lote de tickets:', err);
+      alert('Ocurrió un error al guardar tickets en Firebase: ' + (err.message || err));
+    } finally {
+      setIsSavingBatch(false);
     }
   };
 
@@ -774,11 +799,21 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
 
                 <button
                   type="button"
+                  disabled={isSavingBatch}
                   onClick={handleSaveAllBatch}
-                  className="px-6 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-glow transition-all flex items-center space-x-2"
+                  className="px-6 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white shadow-glow transition-all flex items-center space-x-2 disabled:opacity-50"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Guardar Todos los Tickets ({batchTickets.length})</span>
+                  {isSavingBatch ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Subiendo tickets a la nube de Firebase...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Guardar Todos los Tickets ({batchTickets.length})</span>
+                    </>
+                  )}
                 </button>
               </div>
 
