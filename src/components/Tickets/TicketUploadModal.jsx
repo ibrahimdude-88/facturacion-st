@@ -38,8 +38,31 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
   const timerIntervalRef = useRef(null);
   const cooldownIntervalRef = useRef(null);
 
+  // Reset all internal state whenever modal opens or closes
+  useEffect(() => {
+    if (!isOpen) {
+      setStep('idle');
+      setBatchTickets([]);
+      setActiveReviewIndex(0);
+      setIsSavingBatch(false);
+      setRateLimitNotice('');
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    }
+  }, [isOpen]);
+
+  const handleCloseModal = () => {
+    setStep('idle');
+    setBatchTickets([]);
+    setActiveReviewIndex(0);
+    setIsSavingBatch(false);
+    setRateLimitNotice('');
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    onClose();
+  };
+
   // Load and clean rate limit timestamps
   useEffect(() => {
+    if (!isOpen) return;
     const saved = localStorage.getItem('fs_rate_limit_timestamps');
     const now = Date.now();
     let currentTimestamps = saved ? JSON.parse(saved) : [];
@@ -303,8 +326,7 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
     } catch (err) {
       console.error('Error al guardar el lote de tickets:', err);
     } finally {
-      setIsSavingBatch(false);
-      onClose(); // Always close modal cleanly when save completes or resolves!
+      handleCloseModal(); // Always clean state and close modal!
     }
   };
 
@@ -330,7 +352,7 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
           
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseModal}
             className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
