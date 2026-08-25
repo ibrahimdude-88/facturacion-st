@@ -282,15 +282,14 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
     return null;
   };
 
-  // Save ALL tickets in batch asynchronously to Firebase Cloud
+  // Save ALL tickets in batch asynchronously in parallel to Firebase Cloud
   const handleSaveAllBatch = async () => {
     if (isSavingBatch || batchTickets.length === 0) return;
     setIsSavingBatch(true);
     try {
       const fallbackAlbumId = getValidAlbumId();
 
-      for (let i = 0; i < batchTickets.length; i++) {
-        const ticketData = batchTickets[i];
+      const savePromises = batchTickets.map(async (ticketData) => {
         const cleanTicket = {
           ...ticketData,
           albumId: (ticketData.albumId && albums.some(a => a.id === ticketData.albumId))
@@ -298,7 +297,9 @@ export default function TicketUploadModal({ isOpen, albums, selectedAlbumId, onC
             : fallbackAlbumId
         };
         await onSaveTicket(cleanTicket);
-      }
+      });
+
+      await Promise.all(savePromises);
       onClose();
     } catch (err) {
       console.error('Error al guardar el lote de tickets:', err);

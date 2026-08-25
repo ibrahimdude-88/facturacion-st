@@ -214,14 +214,24 @@ export default function App() {
 
     let finalImageUrl = ticketData.imageUrl || '';
 
-    // 1. Upload photo file to Firebase Storage if available
+    // 1. Upload photo file to Firebase Storage if available (with 4s timeout safeguard)
     if (ticketData.imageFile && storage) {
       try {
         const fileRef = ref(storage, `users/${activeUserId}/tickets/${Date.now()}_${ticketData.imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
-        const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
-        finalImageUrl = await getDownloadURL(uploadSnap.ref);
+        
+        const storageUploadPromise = (async () => {
+          const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
+          return await getDownloadURL(uploadSnap.ref);
+        })();
+
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Storage timeout (4s)')), 4000)
+        );
+
+        finalImageUrl = await Promise.race([storageUploadPromise, timeoutPromise]);
       } catch (uploadErr) {
-        console.warn('Advertencia de carga en Firebase Storage:', uploadErr.message);
+        console.warn('Fallback a imagen WebP optimizada por timeout/aviso de Storage:', uploadErr.message);
+        finalImageUrl = ticketData.imageUrl || '';
       }
     }
 
