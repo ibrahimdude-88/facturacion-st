@@ -127,9 +127,14 @@ export default function AlbumGrid({
             </div>
 
             <div className="mt-3">
-              <h4 className="text-sm font-bold text-slate-100">Todos los Comprobantes</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-slate-100">Todos los Comprobantes</h4>
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                {tickets.length} ticket{tickets.length !== 1 ? 's' : ''} registrados
+                {tickets.length} ticket{tickets.length !== 1 ? 's' : ''} registrados globalmente
+              </p>
+              <p className="text-[10px] text-amber-400/80 font-medium mt-1">
+                🔒 Vista Global (Selecciona un álbum para agregar)
               </p>
             </div>
 

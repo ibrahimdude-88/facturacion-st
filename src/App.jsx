@@ -28,6 +28,10 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
+import { 
+  FolderX, AlertTriangle 
+} from 'lucide-react';
+
 export default function App() {
   const [user, setUser] = useState(null);
 
@@ -53,6 +57,7 @@ export default function App() {
   const [emailModalTicket, setEmailModalTicket] = useState(null);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  const [noAlbumWarningModal, setNoAlbumWarningModal] = useState({ isOpen: false, message: '' });
 
   // Album Modal state
   const [albumModal, setAlbumModal] = useState({ isOpen: false, mode: 'create', album: null });
@@ -63,7 +68,6 @@ export default function App() {
       const unsubscribe = subscribeToAuthChanges((currentUser) => {
         setUser(currentUser);
         if (currentUser && db) {
-          // Register or update user profile in Firestore
           setDoc(doc(db, 'user_profiles', currentUser.uid), {
             uid: currentUser.uid,
             email: currentUser.email || 'Sin correo',
@@ -105,23 +109,13 @@ export default function App() {
       return;
     }
 
-    // Subscribe to Albums in Cloud Firestore
+    // Subscribe to Albums in Cloud Firestore (Excluding any legacy 'General' album)
     const albumsRef = collection(db, 'albums');
     const qAlbums = query(albumsRef, where('userId', '==', activeUid));
     const unsubAlbums = onSnapshot(qAlbums, (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (list.length > 0) {
-        setAlbums(list);
-      } else {
-        // Auto-create default 'General' album in Cloud Firestore if user has no albums
-        addDoc(collection(db, 'albums'), {
-          userId: activeUid,
-          userEmail: user?.email || 'Usuario',
-          name: 'General',
-          createdAt: new Date().toISOString(),
-          isArchived: false,
-        }).catch(err => console.warn('Firestore album init notice:', err.message));
-      }
+      const customAlbums = list.filter(a => a.name && a.name.trim().toLowerCase() !== 'general');
+      setAlbums(customAlbums);
     }, (err) => console.warn('Snapshot albums error:', err.message));
 
     // Subscribe to Tickets in Cloud Firestore
@@ -138,6 +132,35 @@ export default function App() {
     };
   }, [user?.uid]);
 
+  // Open Upload Handler with Album Requirement Validation
+  const handleOpenUpload = () => {
+    if (!selectedAlbumId) {
+      if (albums.length === 0) {
+        setNoAlbumWarningModal({
+          isOpen: true,
+          message: 'No tienes ningún álbum creado todavía. Para escanear o guardar tickets, primero debes crear un álbum.'
+        });
+      } else {
+        setNoAlbumWarningModal({
+          isOpen: true,
+          message: 'Estás viendo "Todos los comprobantes". No es posible agregar tickets aquí. Por favor selecciona un álbum de tu lista para continuar.'
+        });
+      }
+      return;
+    }
+
+    const currentAlbum = albums.find(a => a.id === selectedAlbumId);
+    if (!currentAlbum) {
+      setNoAlbumWarningModal({
+        isOpen: true,
+        message: 'Por favor selecciona un álbum activo antes de agregar comprobantes.'
+      });
+      return;
+    }
+
+    setIsUploadOpen(true);
+  };
+
   // ----------------------------------------------------
   // Album Actions (100% Cloud Firestore)
   // ----------------------------------------------------
@@ -149,13 +172,14 @@ export default function App() {
     if (!cleanName) return;
 
     try {
-      await addDoc(collection(db, 'albums'), {
+      const docRef = await addDoc(collection(db, 'albums'), {
         userId: activeUserId,
         userEmail: user?.email || 'Usuario',
         name: cleanName,
         createdAt: new Date().toISOString(),
         isArchived: false,
       });
+      setSelectedAlbumId(docRef.id);
     } catch (err) {
       console.error('Error al crear álbum en Cloud Firestore:', err);
       alert('Error al crear álbum en la nube: ' + err.message);
@@ -235,9 +259,12 @@ export default function App() {
       }
     }
 
+    // Target Album ID validation
+    const targetAlbumId = ticketData.albumId || selectedAlbumId || albums[0]?.id;
+
     // 2. Save ticket document directly into Cloud Firestore
     const payload = {
-      albumId: ticketData.albumId || (albums[0]?.id || 'alb_1'),
+      albumId: targetAlbumId,
       userId: activeUserId,
       userEmail: user?.email || 'Usuario',
       imageUrl: finalImageUrl,
@@ -258,10 +285,9 @@ export default function App() {
     };
 
     try {
-      await addDoc(collection(db, 'tickets'), payload);
+      return await addDoc(collection(db, 'tickets'), payload);
     } catch (err) {
       console.error('Error al guardar ticket en Cloud Firestore:', err);
-      alert('Error al guardar el ticket en la nube de Firebase: ' + err.message);
     }
   };
 
@@ -312,7 +338,7 @@ export default function App() {
       ? tickets.filter(t => t.albumId === selectedAlbumId)
       : tickets;
 
-    exportBilledTicketsZip(albumTickets, selectedAlbum?.name || 'General');
+    exportBilledTicketsZip(albumTickets, selectedAlbum?.name || 'Todos los comprobantes');
   };
 
   const handleExportPdf = () => {
@@ -321,7 +347,7 @@ export default function App() {
       ? tickets.filter(t => t.albumId === selectedAlbumId)
       : tickets;
 
-    exportExecutivePDFReport(albumTickets, selectedAlbum?.name || 'General');
+    exportExecutivePDFReport(albumTickets, selectedAlbum?.name || 'Todos los comprobantes');
   };
 
   return (
@@ -345,7 +371,7 @@ export default function App() {
             tickets={tickets}
             albums={albums}
             selectedAlbumId={selectedAlbumId}
-            onOpenUpload={() => setIsUploadOpen(true)}
+            onOpenUpload={handleOpenUpload}
             onExportZip={handleExportZip}
             onExportPdf={handleExportPdf}
           />
@@ -360,7 +386,7 @@ export default function App() {
             onEditAlbum={(album) => setAlbumModal({ isOpen: true, mode: 'edit', album })}
             onDeleteAlbum={handleDeleteAlbum}
             onToggleArchiveAlbum={handleToggleArchiveAlbum}
-            onOpenUpload={() => setIsUploadOpen(true)}
+            onOpenUpload={handleOpenUpload}
           />
 
           {/* Tickets Breakdown Table */}
@@ -426,6 +452,45 @@ export default function App() {
           }
         }}
       />
+
+      {/* Warning Modal when user tries to upload ticket without selecting/creating an album */}
+      {noAlbumWarningModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-md rounded-2xl border border-amber-500/40 p-6 space-y-4 text-center shadow-glass relative">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+              <FolderX className="w-7 h-7" />
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-bold text-slate-100">Álbum Requerido</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                {noAlbumWarningModal.message}
+              </p>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setNoAlbumWarningModal({ isOpen: false, message: '' });
+                  setAlbumModal({ isOpen: true, mode: 'create', album: null });
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-glow transition-all"
+              >
+                + Crear Nuevo Álbum
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setNoAlbumWarningModal({ isOpen: false, message: '' })}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs border border-slate-700 transition-all"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* API Key Modal */}
       <ApiKeyModal
