@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, ShieldCheck, Users, Receipt, Folder, DollarSign, Tag, TrendingUp, 
-  Search, RefreshCw, Calendar, Store, CheckCircle2, Clock, Crown, BarChart2 
+  Search, RefreshCw, Calendar, Store, CheckCircle2, Clock, Crown, BarChart2, AlertCircle 
 } from 'lucide-react';
 import { collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../services/firebase';
@@ -11,34 +11,9 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
   const [loading, setLoading] = useState(false);
   const [allTickets, setAllTickets] = useState([]);
   const [allAlbums, setAllAlbums] = useState([]);
+  const [allUserProfiles, setAllUserProfiles] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
-
   const [fetchError, setFetchError] = useState(null);
-
-  const fetchGlobalData = async () => {
-    if (!isOpen) return;
-    setLoading(true);
-    setFetchError(null);
-
-    if (isFirebaseConfigured && db) {
-      try {
-        const albumsSnap = await getDocs(collection(db, 'albums'));
-        setAllAlbums(albumsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        const ticketsSnap = await getDocs(collection(db, 'tickets'));
-        setAllTickets(ticketsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } catch (err) {
-        console.warn('Error fetching global data:', err.message);
-        setFetchError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setAllAlbums(currentAlbums || []);
-      setAllTickets(currentTickets || []);
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -47,29 +22,39 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
     setFetchError(null);
 
     if (isFirebaseConfigured && db) {
-      // 1. Realtime Listeners for ALL Albums across ALL Users
+      // 1. Realtime Listener for Registered User Profiles
+      const unsubProfiles = onSnapshot(collection(db, 'user_profiles'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllUserProfiles(list);
+      }, (err) => {
+        console.warn('Realtime profiles notice:', err.message);
+        setFetchError(`Lectura Perfiles: ${err.message}`);
+      });
+
+      // 2. Realtime Listeners for ALL Albums across ALL Users
       const unsubAlbums = onSnapshot(collection(db, 'albums'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllAlbums(list);
         setLoading(false);
       }, (err) => {
         console.warn('Realtime albums notice:', err.message);
-        setFetchError(`Permiso/Lectura Álbumes: ${err.message}`);
+        setFetchError(`Lectura Álbumes: ${err.message}`);
         setLoading(false);
       });
 
-      // 2. Realtime Listeners for ALL Tickets across ALL Users
+      // 3. Realtime Listeners for ALL Tickets across ALL Users
       const unsubTickets = onSnapshot(collection(db, 'tickets'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllTickets(list);
         setLoading(false);
       }, (err) => {
         console.warn('Realtime tickets notice:', err.message);
-        setFetchError(`Permiso/Lectura Tickets: ${err.message}`);
+        setFetchError(`Lectura Tickets: ${err.message}`);
         setLoading(false);
       });
 
       return () => {
+        unsubProfiles();
         unsubAlbums();
         unsubTickets();
       };
@@ -78,13 +63,30 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
       setAllTickets(currentTickets || []);
       setLoading(false);
     }
-  }, [isOpen, currentAlbums, currentTickets]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   // Aggregate User Statistics
   const userStatsMap = {};
 
+  // Initialize from Registered Profiles
+  allUserProfiles.forEach(prof => {
+    const uid = prof.uid || prof.id;
+    userStatsMap[uid] = {
+      userId: uid,
+      email: prof.email || 'Sin correo',
+      displayName: prof.displayName || prof.email || 'Usuario Google',
+      ticketCount: 0,
+      albumCount: 0,
+      totalAmount: 0,
+      totalDiscount: 0,
+      billedCount: 0,
+      latestDate: prof.lastActive || prof.lastLogin || null,
+    };
+  });
+
+  // Aggregate Tickets
   allTickets.forEach(tkt => {
     const uid = tkt.userId || 'guest';
     const emailToDisplay = tkt.userEmail || (uid === user?.uid ? user.email : (uid.length > 15 ? `Usuario (${uid.slice(0, 8)}...)` : uid));
@@ -93,6 +95,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
       userStatsMap[uid] = {
         userId: uid,
         email: emailToDisplay,
+        displayName: tkt.userEmail || 'Usuario Google',
         ticketCount: 0,
         albumCount: 0,
         totalAmount: 0,
@@ -102,7 +105,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
       };
     }
 
-    if (tkt.userEmail && (!userStatsMap[uid].email || userStatsMap[uid].email.includes('Usuario (') || userStatsMap[uid].email === uid || !userStatsMap[uid].email.includes('@'))) {
+    if (tkt.userEmail && (!userStatsMap[uid].email || userStatsMap[uid].email === 'Sin correo' || userStatsMap[uid].email.includes('Usuario ('))) {
       userStatsMap[uid].email = tkt.userEmail;
     }
 
@@ -117,6 +120,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
     }
   });
 
+  // Aggregate Albums
   allAlbums.forEach(alb => {
     const uid = alb.userId || 'guest';
     const emailToDisplay = alb.userEmail || (uid === user?.uid ? user.email : (uid.length > 15 ? `Usuario (${uid.slice(0, 8)}...)` : uid));
@@ -125,6 +129,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
       userStatsMap[uid] = {
         userId: uid,
         email: emailToDisplay,
+        displayName: alb.userEmail || 'Usuario Google',
         ticketCount: 0,
         albumCount: 0,
         totalAmount: 0,
@@ -132,7 +137,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         billedCount: 0,
         latestDate: null,
       };
-    } else if (alb.userEmail && (!userStatsMap[uid].email || userStatsMap[uid].email.includes('Usuario (') || userStatsMap[uid].email === uid || !userStatsMap[uid].email.includes('@'))) {
+    } else if (alb.userEmail && (!userStatsMap[uid].email || userStatsMap[uid].email === 'Sin correo' || userStatsMap[uid].email.includes('Usuario ('))) {
       userStatsMap[uid].email = alb.userEmail;
     }
     userStatsMap[uid].albumCount += 1;
@@ -140,8 +145,9 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
 
   const userList = Object.values(userStatsMap);
   const filteredUsers = userList.filter(u => 
-    u.email.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-    u.userId.toLowerCase().includes(userSearchQuery.toLowerCase())
+    (u.email && u.email.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+    (u.displayName && u.displayName.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+    (u.userId && u.userId.toLowerCase().includes(userSearchQuery.toLowerCase()))
   );
 
   // Global KPIs
@@ -188,10 +194,10 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={fetchGlobalData}
+              onClick={() => setLoading(true)}
               disabled={loading}
               className="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50"
-              title="Recargar datos de la nube"
+              title="Sincronización en tiempo real activa"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -209,15 +215,12 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
         <div className="flex-1 overflow-y-auto space-y-6 pr-1">
           
           {fetchError && (
-            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
-              <span className="font-bold">Aviso de Sincronización Nube:</span>
-              <span>{fetchError}. Verifica las Reglas de Seguridad de Cloud Firestore (deben permitir lectura de la colección 'tickets' y 'albums').</span>
-            </div>
-          )}
-
-          {!isFirebaseConfigured && (
-            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs">
-              <span className="font-bold">Modo Almacenamiento Local:</span> Mostrando únicamente tickets y álbumes cargados en la sesión actual.
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2 leading-relaxed">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <div>
+                <span className="font-bold block">Aviso de Reglas de Firebase Console:</span>
+                <span>{fetchError}. Por favor verifica en Firebase Console -&gt; Firestore Database -&gt; Rules que las reglas permitan lectura para usuarios autenticados.</span>
+              </div>
             </div>
           )}
 
@@ -233,7 +236,7 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
               <span className="text-xl font-extrabold text-slate-100 block">
                 {totalUniqueUsers}
               </span>
-              <span className="text-[10px] text-blue-400 font-medium">Usuarios activos</span>
+              <span className="text-[10px] text-blue-400 font-medium">Registradas</span>
             </div>
 
             {/* Total Tickets */}
@@ -308,19 +311,23 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
                 <span>Comercios Más Escaneados en el Sistema</span>
               </h4>
               <div className="space-y-2">
-                {topMerchants.map(([merchant, count], i) => (
-                  <div key={merchant} className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800/60 text-xs">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 font-bold text-[11px] flex items-center justify-center">
-                        #{i + 1}
+                {topMerchants.length > 0 ? (
+                  topMerchants.map(([merchant, count], i) => (
+                    <div key={merchant} className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800/60 text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 font-bold text-[11px] flex items-center justify-center">
+                          #{i + 1}
+                        </span>
+                        <span className="font-semibold text-slate-200">{merchant}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-extrabold text-[11px]">
+                        {count} ticket{count !== 1 ? 's' : ''}
                       </span>
-                      <span className="font-semibold text-slate-200">{merchant}</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-extrabold text-[11px]">
-                      {count} ticket{count !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500 py-2 text-center">No hay tickets registrados aún.</p>
+                )}
               </div>
             </div>
 
@@ -328,12 +335,12 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
             <div className="lg:col-span-6 p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
               <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
                 <BarChart2 className="w-4 h-4 text-emerald-400" />
-                <span>Salud del Sistema e IA Gemini 3.5/3.6</span>
+                <span>Salud del Sistema e IA Gemini 3.6</span>
               </h4>
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
                   <span className="text-slate-400">Modelo Activo de IA:</span>
-                  <span className="font-bold text-emerald-400">Google Gemini 3.5 Flash / 3.6 Flash</span>
+                  <span className="font-bold text-emerald-400">Google Gemini 3.6 Flash</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
                   <span className="text-slate-400">Base de Datos NoSQL:</span>
@@ -382,56 +389,64 @@ export default function AdminDashboardModal({ isOpen, user, onClose, currentAlbu
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {filteredUsers.map((u) => {
-                      const isCurrentAdmin = u.userId === user?.uid;
+                    {filteredUsers.length > 0 ? (
+                      filteredUsers.map((u) => {
+                        const isCurrentAdmin = u.userId === user?.uid || u.email.toLowerCase().includes('zippo0189');
 
-                      return (
-                        <tr key={u.userId} className="hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="flex items-center space-x-2">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
-                                isCurrentAdmin ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-300'
-                              }`}>
-                                {isCurrentAdmin ? <Crown className="w-3.5 h-3.5" /> : u.email.slice(0, 1).toUpperCase()}
+                        return (
+                          <tr key={u.userId} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center space-x-2">
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
+                                  isCurrentAdmin ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-300'
+                                }`}>
+                                  {isCurrentAdmin ? <Crown className="w-3.5 h-3.5" /> : u.email.slice(0, 1).toUpperCase()}
+                                </div>
+                                <div>
+                                  <span className="font-bold text-slate-100 block">
+                                    {u.email}
+                                    {isCurrentAdmin && (
+                                      <span className="ml-2 px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                                        Admin
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-500">
+                                    ID: {u.userId}
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <span className="font-bold text-slate-100 block">
-                                  {u.email}
-                                  {isCurrentAdmin && (
-                                    <span className="ml-2 px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                                      Admin (Tú)
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="text-[10px] font-mono text-slate-500">
-                                  ID: {u.userId}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
+                            </td>
 
-                          <td className="py-3 px-4 text-center font-extrabold text-slate-100">
-                            {u.ticketCount}
-                          </td>
+                            <td className="py-3 px-4 text-center font-extrabold text-slate-100">
+                              {u.ticketCount}
+                            </td>
 
-                          <td className="py-3 px-4 text-center font-semibold text-slate-300">
-                            {u.albumCount}
-                          </td>
+                            <td className="py-3 px-4 text-center font-semibold text-slate-300">
+                              {u.albumCount}
+                            </td>
 
-                          <td className="py-3 px-4 text-right font-extrabold text-emerald-400">
-                            {formatCurrency(u.totalAmount)}
-                          </td>
+                            <td className="py-3 px-4 text-right font-extrabold text-emerald-400">
+                              {formatCurrency(u.totalAmount)}
+                            </td>
 
-                          <td className="py-3 px-4 text-right font-bold text-emerald-300">
-                            {formatCurrency(u.totalDiscount)}
-                          </td>
+                            <td className="py-3 px-4 text-right font-bold text-emerald-300">
+                              {formatCurrency(u.totalDiscount)}
+                            </td>
 
-                          <td className="py-3 px-4 text-center text-slate-400 whitespace-nowrap">
-                            {u.latestDate || 'Sin fecha'}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            <td className="py-3 px-4 text-center text-slate-400 whitespace-nowrap">
+                              {u.latestDate || 'Sin fecha'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-500 text-xs">
+                          No se encontraron registros de usuarios en la nube de Firebase.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

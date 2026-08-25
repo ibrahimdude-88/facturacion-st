@@ -24,7 +24,7 @@ import { exportBilledTicketsZip } from './services/zipExporter';
 import { exportExecutivePDFReport } from './services/pdfExporter';
 
 import { 
-  collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc 
+  collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -62,7 +62,16 @@ export default function App() {
     if (isFirebaseConfigured) {
       const unsubscribe = subscribeToAuthChanges((currentUser) => {
         setUser(currentUser);
-        if (!currentUser) {
+        if (currentUser && db) {
+          // Register or update user profile in Firestore
+          setDoc(doc(db, 'user_profiles', currentUser.uid), {
+            uid: currentUser.uid,
+            email: currentUser.email || 'Sin correo',
+            displayName: currentUser.displayName || currentUser.email || 'Usuario Google',
+            photoURL: currentUser.photoURL || null,
+            lastActive: new Date().toISOString(),
+          }, { merge: true }).catch(err => console.warn('User profile sync notice:', err.message));
+        } else if (!currentUser) {
           setAlbums([]);
           setTickets([]);
           setSelectedAlbumId(null);
