@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import AuthGuard from './components/AuthGuard';
 import StatsOverview from './components/Analytics/StatsOverview';
@@ -42,7 +42,7 @@ export default function App() {
     localStorage.setItem('fs_theme', nextTheme);
   };
 
-  // Core Data State (Instant Local Cache + Cloud Firestore Realtime Sync)
+  // Core Data State (100% Cloud Firestore Realtime Sync)
   const [albums, setAlbums] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
@@ -57,7 +57,7 @@ export default function App() {
   // Album Modal state
   const [albumModal, setAlbumModal] = useState({ isOpen: false, mode: 'create', album: null });
 
-  // 1. Auth Subscription & User State Reset
+  // 1. Auth Subscription & Profile Registration
   useEffect(() => {
     if (isFirebaseConfigured) {
       const unsubscribe = subscribeToAuthChanges((currentUser) => {
@@ -93,101 +93,11 @@ export default function App() {
     setSelectedTicket(null);
   };
 
-  // Helper to persist user state in LocalStorage & State
-  const updateLocalAndCloudState = (newAlbums, newTickets) => {
-    const activeUid = user?.uid;
-    if (!activeUid) return;
-    
-    if (newAlbums !== null && newAlbums !== undefined) {
-      setAlbums(newAlbums);
-      localStorage.setItem(`fs_albums_${activeUid}`, JSON.stringify(newAlbums));
-    }
-    if (newTickets !== null && newTickets !== undefined) {
-      setTickets(newTickets);
-      localStorage.setItem(`fs_tickets_${activeUid}`, JSON.stringify(newTickets));
-    }
-  };
-
-  // Auto-sync any LocalStorage tickets or albums to Cloud Firestore
-  const syncLocalStorageToFirestore = async (activeUser) => {
-    if (!isFirebaseConfigured || !db || !activeUser?.uid) return;
-
-    try {
-      // 1. Register User Profile in Firestore
-      await setDoc(doc(db, 'user_profiles', activeUser.uid), {
-        uid: activeUser.uid,
-        email: activeUser.email || 'Sin correo',
-        displayName: activeUser.displayName || activeUser.email || 'Usuario Google',
-        photoURL: activeUser.photoURL || null,
-        lastActive: new Date().toISOString(),
-      }, { merge: true });
-
-      // 2. Scan all localStorage keys for tickets/albums across ALL sessions stored on this device
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        
-        if (key && key.startsWith('fs_tickets_')) {
-          const targetUid = key.replace('fs_tickets_', '');
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            try {
-              const localTkts = JSON.parse(raw);
-              if (Array.isArray(localTkts) && localTkts.length > 0) {
-                const snap = await getDocs(query(collection(db, 'tickets'), where('userId', '==', targetUid)));
-                const remoteIds = new Set(snap.docs.map(d => d.id));
-
-                for (const tkt of localTkts) {
-                  if (!remoteIds.has(tkt.id)) {
-                    const { id, ...cleanData } = tkt;
-                    await addDoc(collection(db, 'tickets'), {
-                      ...cleanData,
-                      userId: targetUid,
-                      userEmail: activeUser.email || tkt.userEmail || 'Usuario',
-                      createdAt: tkt.createdAt || new Date().toISOString(),
-                    });
-                  }
-                }
-              }
-            } catch (e) {}
-          }
-        }
-
-        if (key && key.startsWith('fs_albums_')) {
-          const targetUid = key.replace('fs_albums_', '');
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            try {
-              const localAlbs = JSON.parse(raw);
-              if (Array.isArray(localAlbs) && localAlbs.length > 0) {
-                const snap = await getDocs(query(collection(db, 'albums'), where('userId', '==', targetUid)));
-                const remoteNames = new Set(snap.docs.map(d => d.data().name));
-
-                for (const alb of localAlbs) {
-                  if (!remoteNames.has(alb.name)) {
-                    await addDoc(collection(db, 'albums'), {
-                      userId: targetUid,
-                      userEmail: activeUser.email || alb.userEmail || 'Usuario',
-                      name: alb.name,
-                      createdAt: alb.createdAt || new Date().toISOString(),
-                      isArchived: Boolean(alb.isArchived)
-                    });
-                  }
-                }
-              }
-            } catch (e) {}
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Auto-sync notice:', err.message);
-    }
-  };
-
-  // 2. Hybrid Persistence Engine (Instant Local Restore + Firestore Realtime Sync)
+  // 2. Pure Cloud Firestore Realtime Subscriptions
   useEffect(() => {
     const activeUid = user?.uid;
 
-    if (!activeUid) {
+    if (!activeUid || !isFirebaseConfigured || !db) {
       setAlbums([]);
       setTickets([]);
       setSelectedAlbumId(null);
@@ -195,194 +105,132 @@ export default function App() {
       return;
     }
 
-    // Trigger background cloud sync for all local data
-    syncLocalStorageToFirestore(user);
-
-    // 1. Immediately restore cached local data for 0ms render on refresh (F5)
-    const cachedAlbums = localStorage.getItem(`fs_albums_${activeUid}`);
-    const cachedTickets = localStorage.getItem(`fs_tickets_${activeUid}`);
-    const defaultCleanAlbum = [{ 
-      id: 'alb_gen_' + activeUid.slice(0, 6), 
-      userId: activeUid, 
-      userEmail: user?.email || 'Usuario', 
-      name: 'General', 
-      createdAt: new Date().toISOString(), 
-      isArchived: false 
-    }];
-
-    if (cachedAlbums) {
-      try {
-        const parsed = JSON.parse(cachedAlbums);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setAlbums(parsed);
-        } else {
-          setAlbums(defaultCleanAlbum);
-        }
-      } catch (e) {
-        setAlbums(defaultCleanAlbum);
+    // Subscribe to Albums in Cloud Firestore
+    const albumsRef = collection(db, 'albums');
+    const qAlbums = query(albumsRef, where('userId', '==', activeUid));
+    const unsubAlbums = onSnapshot(qAlbums, (snapshot) => {
+      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (list.length > 0) {
+        setAlbums(list);
+      } else {
+        // Auto-create default 'General' album in Cloud Firestore if user has no albums
+        addDoc(collection(db, 'albums'), {
+          userId: activeUid,
+          userEmail: user?.email || 'Usuario',
+          name: 'General',
+          createdAt: new Date().toISOString(),
+          isArchived: false,
+        }).catch(err => console.warn('Firestore album init notice:', err.message));
       }
-    } else {
-      setAlbums(defaultCleanAlbum);
-    }
+    }, (err) => console.warn('Snapshot albums error:', err.message));
 
-    if (cachedTickets) {
-      try {
-        const parsed = JSON.parse(cachedTickets);
-        if (Array.isArray(parsed)) {
-          setTickets(parsed);
-        }
-      } catch (e) {}
-    }
+    // Subscribe to Tickets in Cloud Firestore
+    const ticketsRef = collection(db, 'tickets');
+    const qTickets = query(ticketsRef, where('userId', '==', activeUid));
+    const unsubTickets = onSnapshot(qTickets, (snapshot) => {
+      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setTickets(list);
+    }, (err) => console.warn('Snapshot tickets error:', err.message));
 
-    if (isFirebaseConfigured && db) {
-      // Subscribe to Albums in Firestore
-      const albumsRef = collection(db, 'albums');
-      const qAlbums = query(albumsRef, where('userId', '==', activeUid));
-      const unsubAlbums = onSnapshot(qAlbums, (snapshot) => {
-        const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (list.length > 0) {
-          updateLocalAndCloudState(list, null);
-        } else {
-          // If Firestore has no documents yet, push initial General album to Firestore
-          addDoc(collection(db, 'albums'), defaultCleanAlbum[0])
-            .catch(err => console.warn('Firestore album init notice:', err.message));
-        }
-      }, (err) => console.warn('Snapshot albums:', err.message));
-
-      // Subscribe to Tickets in Firestore
-      const ticketsRef = collection(db, 'tickets');
-      const qTickets = query(ticketsRef, where('userId', '==', activeUid));
-      const unsubTickets = onSnapshot(qTickets, (snapshot) => {
-        const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (list.length > 0) {
-          updateLocalAndCloudState(null, list);
-        }
-      }, (err) => console.warn('Snapshot tickets:', err.message));
-
-      return () => {
-        unsubAlbums();
-        unsubTickets();
-      };
-    }
+    return () => {
+      unsubAlbums();
+      unsubTickets();
+    };
   }, [user?.uid]);
 
   // ----------------------------------------------------
-  // Album Actions (Instant UI + Cloud Firestore Backup)
+  // Album Actions (100% Cloud Firestore)
   // ----------------------------------------------------
   const handleCreateAlbum = async (name) => {
     const activeUserId = user?.uid;
-    if (!activeUserId) return;
+    if (!activeUserId || !isFirebaseConfigured || !db) return;
 
-    const tempId = 'alb_' + Date.now();
     const cleanName = name.trim();
     if (!cleanName) return;
 
-    const newAlbum = {
-      id: tempId,
-      userId: activeUserId,
-      userEmail: user?.email || 'Usuario',
-      name: cleanName,
-      createdAt: new Date().toISOString(),
-      isArchived: false,
-    };
-
-    const updatedAlbums = [...albums, newAlbum];
-    updateLocalAndCloudState(updatedAlbums, null);
-
-    if (isFirebaseConfigured && db) {
-      try {
-        const docRef = await addDoc(collection(db, 'albums'), {
-          userId: activeUserId,
-          userEmail: user?.email || 'Usuario',
-          name: cleanName,
-          createdAt: new Date().toISOString(),
-          isArchived: false,
-        });
-
-        // Replace temp ID with Firestore document ID
-        setAlbums(prev => {
-          const list = prev.map(a => a.id === tempId ? { ...a, id: docRef.id } : a);
-          localStorage.setItem(`fs_albums_${activeUserId}`, JSON.stringify(list));
-          return list;
-        });
-      } catch (err) {
-        console.warn('Firestore album create notice:', err.message);
-      }
+    try {
+      await addDoc(collection(db, 'albums'), {
+        userId: activeUserId,
+        userEmail: user?.email || 'Usuario',
+        name: cleanName,
+        createdAt: new Date().toISOString(),
+        isArchived: false,
+      });
+    } catch (err) {
+      console.error('Error al crear álbum en Cloud Firestore:', err);
+      alert('Error al crear álbum en la nube: ' + err.message);
     }
   };
 
   const handleEditAlbum = async (name) => {
-    if (!albumModal.album || !user?.uid) return;
+    if (!albumModal.album || !user?.uid || !db) return;
     const cleanName = name.trim();
     if (!cleanName) return;
 
-    const updatedAlbums = albums.map(a => a.id === albumModal.album.id ? { ...a, name: cleanName } : a);
-    updateLocalAndCloudState(updatedAlbums, null);
-
-    if (isFirebaseConfigured && db) {
-      try {
-        await updateDoc(doc(db, 'albums', albumModal.album.id), { name: cleanName });
-      } catch (err) {
-        console.warn('Firestore album update notice:', err.message);
-      }
+    try {
+      await updateDoc(doc(db, 'albums', albumModal.album.id), { name: cleanName });
+    } catch (err) {
+      console.error('Error al editar álbum en Cloud Firestore:', err);
     }
   };
 
   const handleDeleteAlbum = async (albumId) => {
-    if (!user?.uid) return;
-    const updatedAlbums = albums.filter(a => a.id !== albumId);
-    updateLocalAndCloudState(updatedAlbums, null);
+    if (!user?.uid || !db) return;
 
     if (selectedAlbumId === albumId) {
       setSelectedAlbumId(null);
     }
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await deleteDoc(doc(db, 'albums', albumId));
-      } catch (err) {
-        console.warn('Firestore album delete notice:', err.message);
-      }
+    try {
+      await deleteDoc(doc(db, 'albums', albumId));
+    } catch (err) {
+      console.error('Error al eliminar álbum en Cloud Firestore:', err);
     }
   };
 
   const handleToggleArchiveAlbum = async (albumId) => {
     const alb = albums.find(a => a.id === albumId);
-    if (!alb || !user?.uid) return;
+    if (!alb || !user?.uid || !db) return;
 
     const nextArchived = !alb.isArchived;
     const todayStr = new Date().toLocaleDateString('es-MX');
 
-    const updatedAlbums = albums.map(a => a.id === albumId ? { ...a, isArchived: nextArchived, archivedAt: nextArchived ? todayStr : null } : a);
-    updateLocalAndCloudState(updatedAlbums, null);
-
-    if (isFirebaseConfigured && db) {
-      try {
-        await updateDoc(doc(db, 'albums', albumId), {
-          isArchived: nextArchived,
-          archivedAt: nextArchived ? todayStr : null
-        });
-      } catch (err) {
-        console.warn('Firestore album archive notice:', err.message);
-      }
+    try {
+      await updateDoc(doc(db, 'albums', albumId), {
+        isArchived: nextArchived,
+        archivedAt: nextArchived ? todayStr : null
+      });
+    } catch (err) {
+      console.error('Error al archivar álbum en Cloud Firestore:', err);
     }
   };
 
   // ----------------------------------------------------
-  // Ticket Actions (Instant UX + Cloud Storage Backup)
+  // Ticket Actions (100% Cloud Storage & Cloud Firestore)
   // ----------------------------------------------------
   const handleSaveNewTicket = async (ticketData) => {
     const activeUserId = user?.uid;
-    if (!activeUserId) return;
+    if (!activeUserId || !isFirebaseConfigured || !db) return;
 
-    const newTicketId = 'tkt_' + Date.now();
+    let finalImageUrl = ticketData.imageUrl || '';
 
+    // 1. Upload photo file to Firebase Storage if available
+    if (ticketData.imageFile && storage) {
+      try {
+        const fileRef = ref(storage, `users/${activeUserId}/tickets/${Date.now()}_${ticketData.imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+        const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
+        finalImageUrl = await getDownloadURL(uploadSnap.ref);
+      } catch (uploadErr) {
+        console.warn('Advertencia de carga en Firebase Storage:', uploadErr.message);
+      }
+    }
+
+    // 2. Save ticket document directly into Cloud Firestore
     const payload = {
-      id: newTicketId,
       albumId: ticketData.albumId || (albums[0]?.id || 'alb_1'),
       userId: activeUserId,
       userEmail: user?.email || 'Usuario',
-      imageUrl: ticketData.imageUrl || '',
+      imageUrl: finalImageUrl,
       businessName: ticketData.businessName || 'Comercio General',
       purchaseDate: ticketData.purchaseDate || new Date().toISOString().split('T')[0],
       items: ticketData.items || [],
@@ -399,82 +247,51 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
-    const updatedTickets = [payload, ...tickets];
-    updateLocalAndCloudState(null, updatedTickets);
-
-    if (isFirebaseConfigured && db) {
-      try {
-        const { id, ...docData } = payload;
-        const docRef = await addDoc(collection(db, 'tickets'), docData);
-
-        if (ticketData.imageFile && storage) {
-          const fileRef = ref(storage, `users/${activeUserId}/tickets/${docRef.id}_${Date.now()}.webp`);
-          const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
-          const storageUrl = await getDownloadURL(uploadSnap.ref);
-
-          await updateDoc(doc(db, 'tickets', docRef.id), { imageUrl: storageUrl });
-
-          setTickets(prev => {
-            const list = prev.map(t => t.id === newTicketId ? { ...t, id: docRef.id, imageUrl: storageUrl } : t);
-            localStorage.setItem(`fs_tickets_${activeUserId}`, JSON.stringify(list));
-            return list;
-          });
-        }
-      } catch (err) {
-        console.warn('Firestore ticket create notice:', err.message);
-      }
+    try {
+      await addDoc(collection(db, 'tickets'), payload);
+    } catch (err) {
+      console.error('Error al guardar ticket en Cloud Firestore:', err);
+      alert('Error al guardar el ticket en la nube de Firebase: ' + err.message);
     }
   };
 
   const handleToggleBilled = async (ticketId, isBilled) => {
-    if (!user?.uid) return;
-    const updatedTickets = tickets.map(t => t.id === ticketId ? { ...t, isBilled } : t);
-    updateLocalAndCloudState(null, updatedTickets);
+    if (!user?.uid || !db) return;
 
     if (selectedTicket?.id === ticketId) {
       setSelectedTicket(prev => prev ? { ...prev, isBilled } : null);
     }
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await updateDoc(doc(db, 'tickets', ticketId), { isBilled });
-      } catch (err) {
-        console.warn('Firestore toggle billed notice:', err.message);
-      }
+    try {
+      await updateDoc(doc(db, 'tickets', ticketId), { isBilled });
+    } catch (err) {
+      console.error('Error al actualizar estado en Cloud Firestore:', err);
     }
   };
 
   const handleSaveEditedTicket = async (ticketData) => {
-    if (!user?.uid) return;
-    const updatedTickets = tickets.map(t => t.id === ticketData.id ? ticketData : t);
-    updateLocalAndCloudState(null, updatedTickets);
+    if (!user?.uid || !db) return;
     setSelectedTicket(ticketData);
 
-    if (isFirebaseConfigured && db) {
-      try {
-        const { id, ...dataToUpdate } = ticketData;
-        await updateDoc(doc(db, 'tickets', id), dataToUpdate);
-      } catch (err) {
-        console.warn('Firestore ticket update notice:', err.message);
-      }
+    try {
+      const { id, ...dataToUpdate } = ticketData;
+      await updateDoc(doc(db, 'tickets', id), dataToUpdate);
+    } catch (err) {
+      console.error('Error al guardar ticket en Cloud Firestore:', err);
     }
   };
 
   const handleDeleteTicket = async (ticketId) => {
-    if (!user?.uid) return;
-    const updatedTickets = tickets.filter(t => t.id !== ticketId);
-    updateLocalAndCloudState(null, updatedTickets);
+    if (!user?.uid || !db) return;
 
     if (selectedTicket?.id === ticketId) {
       setSelectedTicket(null);
     }
 
-    if (isFirebaseConfigured && db) {
-      try {
-        await deleteDoc(doc(db, 'tickets', ticketId));
-      } catch (err) {
-        console.warn('Firestore ticket delete notice:', err.message);
-      }
+    try {
+      await deleteDoc(doc(db, 'tickets', ticketId));
+    } catch (err) {
+      console.error('Error al eliminar ticket en Cloud Firestore:', err);
     }
   };
 
