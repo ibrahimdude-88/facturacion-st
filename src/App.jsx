@@ -236,58 +236,55 @@ export default function App() {
     const activeUserId = user?.uid;
     if (!activeUserId || !isFirebaseConfigured || !db) return;
 
-    let finalImageUrl = ticketData.imageUrl || '';
+    // Guaranteed valid albumId
+    const targetAlbumId = ticketData.albumId || selectedAlbumId || (albums[0]?.id || 'album_1');
 
-    // 1. Upload photo file to Firebase Storage if available (with 4s timeout safeguard)
-    if (ticketData.imageFile && storage) {
-      try {
-        const fileRef = ref(storage, `users/${activeUserId}/tickets/${Date.now()}_${ticketData.imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
-        
-        const storageUploadPromise = (async () => {
-          const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
-          return await getDownloadURL(uploadSnap.ref);
-        })();
-
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Storage timeout (4s)')), 4000)
-        );
-
-        finalImageUrl = await Promise.race([storageUploadPromise, timeoutPromise]);
-      } catch (uploadErr) {
-        console.warn('Fallback a imagen WebP optimizada por timeout/aviso de Storage:', uploadErr.message);
-        finalImageUrl = ticketData.imageUrl || '';
-      }
-    }
-
-    // Target Album ID validation
-    const targetAlbumId = ticketData.albumId || selectedAlbumId || albums[0]?.id;
-
-    // 2. Save ticket document directly into Cloud Firestore
+    // 1. Initial Instant Payload with WebP Image Data URL
     const payload = {
-      albumId: targetAlbumId,
-      userId: activeUserId,
-      userEmail: user?.email || 'Usuario',
-      imageUrl: finalImageUrl,
-      businessName: ticketData.businessName || 'Comercio General',
-      purchaseDate: ticketData.purchaseDate || new Date().toISOString().split('T')[0],
-      items: ticketData.items || [],
+      albumId: String(targetAlbumId),
+      userId: String(activeUserId),
+      userEmail: String(user?.email || 'Usuario'),
+      imageUrl: String(ticketData.imageUrl || ''),
+      businessName: String(ticketData.businessName || 'Comercio General'),
+      purchaseDate: String(ticketData.purchaseDate || new Date().toISOString().split('T')[0]),
+      items: Array.isArray(ticketData.items) ? ticketData.items : [],
       subtotal: Number(ticketData.subtotal) || 0,
       discount: Number(ticketData.discount) || 0,
       iva: Number(ticketData.iva) || 0,
       tip: Number(ticketData.tip) || 0,
       total: Number(ticketData.total) || 0,
-      billingUrl: ticketData.billingUrl || '',
-      billingEmail: ticketData.billingEmail || '',
-      qrData: ticketData.qrData || '',
-      isBilled: false,
+      billingUrl: String(ticketData.billingUrl || ''),
+      billingEmail: String(ticketData.billingEmail || ''),
+      qrData: String(ticketData.qrData || ''),
+      isBilled: Boolean(ticketData.isBilled),
       status: 'completed',
       createdAt: new Date().toISOString(),
     };
 
     try {
-      return await addDoc(collection(db, 'tickets'), payload);
+      // Create document in Firestore immediately (takes ~50ms)
+      const docRef = await addDoc(collection(db, 'tickets'), payload);
+
+      // Async background upload to Firebase Storage if available (non-blocking)
+      if (ticketData.imageFile && storage && docRef?.id) {
+        (async () => {
+          try {
+            const fileRef = ref(storage, `users/${activeUserId}/tickets/${Date.now()}_${ticketData.imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+            const uploadSnap = await uploadBytes(fileRef, ticketData.imageFile);
+            const storageUrl = await getDownloadURL(uploadSnap.ref);
+            if (storageUrl) {
+              await updateDoc(doc(db, 'tickets', docRef.id), { imageUrl: storageUrl });
+            }
+          } catch (storageErr) {
+            console.warn('Imagen WebP guardada en Firestore. Aviso de Storage:', storageErr.message);
+          }
+        })();
+      }
+
+      return docRef;
     } catch (err) {
       console.error('Error al guardar ticket en Cloud Firestore:', err);
+      alert('Error al guardar ticket en la nube: ' + err.message);
     }
   };
 
