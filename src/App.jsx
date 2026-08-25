@@ -30,7 +30,6 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [isDemoUser, setIsDemoUser] = useState(false);
 
   // Theme State ('dark' | 'light')
   const [theme, setTheme] = useState(() => {
@@ -64,7 +63,6 @@ export default function App() {
       const unsubscribe = subscribeToAuthChanges((currentUser) => {
         setUser(currentUser);
         if (!currentUser) {
-          setIsDemoUser(false);
           setAlbums([]);
           setTickets([]);
           setSelectedAlbumId(null);
@@ -75,24 +73,11 @@ export default function App() {
     }
   }, []);
 
-  // Demo user login handler
-  const handleDemoLogin = () => {
-    const mockUser = {
-      uid: 'demo_user_123',
-      displayName: 'Usuario Demostración',
-      email: 'demo@facturasnap.ai',
-      photoURL: null,
-    };
-    setUser(mockUser);
-    setIsDemoUser(true);
-  };
-
   const handleLogout = async () => {
-    if (isFirebaseConfigured && !isDemoUser) {
+    if (isFirebaseConfigured) {
       await logoutUser();
     }
     setUser(null);
-    setIsDemoUser(false);
     setAlbums([]);
     setTickets([]);
     setSelectedAlbumId(null);
@@ -101,7 +86,8 @@ export default function App() {
 
   // Helper to persist user state in LocalStorage & State
   const updateLocalAndCloudState = (newAlbums, newTickets) => {
-    const activeUid = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const activeUid = user?.uid;
+    if (!activeUid) return;
     
     if (newAlbums !== null && newAlbums !== undefined) {
       setAlbums(newAlbums);
@@ -115,7 +101,7 @@ export default function App() {
 
   // 2. Hybrid Persistence Engine (Instant Local Restore + Firestore Realtime Sync)
   useEffect(() => {
-    const activeUid = user?.uid || (isDemoUser ? 'demo_user_123' : null);
+    const activeUid = user?.uid;
 
     if (!activeUid) {
       setAlbums([]);
@@ -128,7 +114,14 @@ export default function App() {
     // 1. Immediately restore cached local data for 0ms render on refresh (F5)
     const cachedAlbums = localStorage.getItem(`fs_albums_${activeUid}`);
     const cachedTickets = localStorage.getItem(`fs_tickets_${activeUid}`);
-    const defaultCleanAlbum = [{ id: 'alb_gen_' + activeUid.slice(0, 6), userId: activeUid, name: 'General', createdAt: new Date().toISOString(), isArchived: false }];
+    const defaultCleanAlbum = [{ 
+      id: 'alb_gen_' + activeUid.slice(0, 6), 
+      userId: activeUid, 
+      userEmail: user?.email || 'Usuario', 
+      name: 'General', 
+      createdAt: new Date().toISOString(), 
+      isArchived: false 
+    }];
 
     if (cachedAlbums) {
       try {
@@ -154,9 +147,7 @@ export default function App() {
       } catch (e) {}
     }
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUid !== 'demo_user_123';
-
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       // Subscribe to Albums in Firestore
       const albumsRef = collection(db, 'albums');
       const qAlbums = query(albumsRef, where('userId', '==', activeUid));
@@ -186,13 +177,15 @@ export default function App() {
         unsubTickets();
       };
     }
-  }, [user?.uid, isDemoUser]);
+  }, [user?.uid]);
 
   // ----------------------------------------------------
   // Album Actions (Instant UI + Cloud Firestore Backup)
   // ----------------------------------------------------
   const handleCreateAlbum = async (name) => {
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const activeUserId = user?.uid;
+    if (!activeUserId) return;
+
     const tempId = 'alb_' + Date.now();
     const cleanName = name.trim();
     if (!cleanName) return;
@@ -200,6 +193,7 @@ export default function App() {
     const newAlbum = {
       id: tempId,
       userId: activeUserId,
+      userEmail: user?.email || 'Usuario',
       name: cleanName,
       createdAt: new Date().toISOString(),
       isArchived: false,
@@ -208,12 +202,11 @@ export default function App() {
     const updatedAlbums = [...albums, newAlbum];
     updateLocalAndCloudState(updatedAlbums, null);
 
-    const shouldWriteToFirestore = isFirebaseConfigured && Boolean(db);
-    if (shouldWriteToFirestore) {
+    if (isFirebaseConfigured && db) {
       try {
         const docRef = await addDoc(collection(db, 'albums'), {
           userId: activeUserId,
-          userEmail: user?.email || (isDemoUser ? 'demo@facturasnap.ai' : 'Invitado'),
+          userEmail: user?.email || 'Usuario',
           name: cleanName,
           createdAt: new Date().toISOString(),
           isArchived: false,
@@ -232,16 +225,14 @@ export default function App() {
   };
 
   const handleEditAlbum = async (name) => {
-    if (!albumModal.album) return;
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    if (!albumModal.album || !user?.uid) return;
     const cleanName = name.trim();
     if (!cleanName) return;
 
     const updatedAlbums = albums.map(a => a.id === albumModal.album.id ? { ...a, name: cleanName } : a);
     updateLocalAndCloudState(updatedAlbums, null);
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       try {
         await updateDoc(doc(db, 'albums', albumModal.album.id), { name: cleanName });
       } catch (err) {
@@ -251,7 +242,7 @@ export default function App() {
   };
 
   const handleDeleteAlbum = async (albumId) => {
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    if (!user?.uid) return;
     const updatedAlbums = albums.filter(a => a.id !== albumId);
     updateLocalAndCloudState(updatedAlbums, null);
 
@@ -259,8 +250,7 @@ export default function App() {
       setSelectedAlbumId(null);
     }
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       try {
         await deleteDoc(doc(db, 'albums', albumId));
       } catch (err) {
@@ -271,17 +261,15 @@ export default function App() {
 
   const handleToggleArchiveAlbum = async (albumId) => {
     const alb = albums.find(a => a.id === albumId);
-    if (!alb) return;
+    if (!alb || !user?.uid) return;
 
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
     const nextArchived = !alb.isArchived;
     const todayStr = new Date().toLocaleDateString('es-MX');
 
     const updatedAlbums = albums.map(a => a.id === albumId ? { ...a, isArchived: nextArchived, archivedAt: nextArchived ? todayStr : null } : a);
     updateLocalAndCloudState(updatedAlbums, null);
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       try {
         await updateDoc(doc(db, 'albums', albumId), {
           isArchived: nextArchived,
@@ -297,14 +285,16 @@ export default function App() {
   // Ticket Actions (Instant UX + Cloud Storage Backup)
   // ----------------------------------------------------
   const handleSaveNewTicket = async (ticketData) => {
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    const activeUserId = user?.uid;
+    if (!activeUserId) return;
+
     const newTicketId = 'tkt_' + Date.now();
 
     const payload = {
       id: newTicketId,
       albumId: ticketData.albumId || (albums[0]?.id || 'alb_1'),
       userId: activeUserId,
-      userEmail: user?.email || (isDemoUser ? 'demo@facturasnap.ai' : 'Invitado'),
+      userEmail: user?.email || 'Usuario',
       imageUrl: ticketData.imageUrl || '',
       businessName: ticketData.businessName || 'Comercio General',
       purchaseDate: ticketData.purchaseDate || new Date().toISOString().split('T')[0],
@@ -325,8 +315,7 @@ export default function App() {
     const updatedTickets = [payload, ...tickets];
     updateLocalAndCloudState(null, updatedTickets);
 
-    const shouldWriteToFirestore = isFirebaseConfigured && Boolean(db);
-    if (shouldWriteToFirestore) {
+    if (isFirebaseConfigured && db) {
       try {
         const { id, ...docData } = payload;
         const docRef = await addDoc(collection(db, 'tickets'), docData);
@@ -351,7 +340,7 @@ export default function App() {
   };
 
   const handleToggleBilled = async (ticketId, isBilled) => {
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    if (!user?.uid) return;
     const updatedTickets = tickets.map(t => t.id === ticketId ? { ...t, isBilled } : t);
     updateLocalAndCloudState(null, updatedTickets);
 
@@ -359,8 +348,7 @@ export default function App() {
       setSelectedTicket(prev => prev ? { ...prev, isBilled } : null);
     }
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       try {
         await updateDoc(doc(db, 'tickets', ticketId), { isBilled });
       } catch (err) {
@@ -370,13 +358,12 @@ export default function App() {
   };
 
   const handleSaveEditedTicket = async (ticketData) => {
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    if (!user?.uid) return;
     const updatedTickets = tickets.map(t => t.id === ticketData.id ? ticketData : t);
     updateLocalAndCloudState(null, updatedTickets);
     setSelectedTicket(ticketData);
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       try {
         const { id, ...dataToUpdate } = ticketData;
         await updateDoc(doc(db, 'tickets', id), dataToUpdate);
@@ -387,7 +374,7 @@ export default function App() {
   };
 
   const handleDeleteTicket = async (ticketId) => {
-    const activeUserId = user?.uid || (isDemoUser ? 'demo_user_123' : 'guest');
+    if (!user?.uid) return;
     const updatedTickets = tickets.filter(t => t.id !== ticketId);
     updateLocalAndCloudState(null, updatedTickets);
 
@@ -395,8 +382,7 @@ export default function App() {
       setSelectedTicket(null);
     }
 
-    const isRealUser = isFirebaseConfigured && !isDemoUser && activeUserId !== 'demo_user_123';
-    if (isRealUser) {
+    if (isFirebaseConfigured && db) {
       try {
         await deleteDoc(doc(db, 'tickets', ticketId));
       } catch (err) {
@@ -430,7 +416,6 @@ export default function App() {
     }`}>
       <Navbar
         user={user}
-        isDemoUser={isDemoUser}
         onLogout={handleLogout}
         onOpenApiKeyModal={() => setApiKeyModalOpen(true)}
         theme={theme}
@@ -438,7 +423,7 @@ export default function App() {
         onOpenAdminModal={() => setIsAdminModalOpen(true)}
       />
 
-      <AuthGuard user={user} isDemoUser={isDemoUser} onDemoLogin={handleDemoLogin}>
+      <AuthGuard user={user}>
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
           
           {/* Analytics Summary */}

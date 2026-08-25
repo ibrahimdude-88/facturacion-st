@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Receipt, Sparkles, QrCode, Shield, Zap, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Receipt, Sparkles, QrCode, Shield, Zap, CheckCircle2 } from 'lucide-react';
 import { loginWithGoogle, isFirebaseConfigured } from '../services/firebase';
 
-export default function AuthGuard({ user, onDemoLogin, children }) {
+export default function AuthGuard({ user, children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -14,10 +14,6 @@ export default function AuthGuard({ user, onDemoLogin, children }) {
     setLoading(true);
     setError(null);
     try {
-      if (!isFirebaseConfigured) {
-        onDemoLogin();
-        return;
-      }
       await loginWithGoogle();
     } catch (err) {
       console.error('Error al iniciar sesión con Google:', err);
@@ -132,21 +128,7 @@ export default function AuthGuard({ user, onDemoLogin, children }) {
               <span>{loading ? 'Iniciando sesión...' : 'Continuar con Google'}</span>
             </button>
 
-            {/* Quick Demo Mode Login Option */}
-            <div className="pt-2 border-t border-slate-800/80 space-y-2">
-              <p className="text-[11px] text-slate-400">
-                ¿Quieres probar la aplicación sin iniciar sesión?
-              </p>
-              <button
-                onClick={onDemoLogin}
-                className="w-full py-2 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-xs font-semibold rounded-lg border border-blue-500/20 transition-all flex items-center justify-center space-x-1.5"
-              >
-                <span>Explorar en Modo Demostración</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-center space-x-2 text-[11px] text-slate-400 pt-1">
+            <div className="flex items-center justify-center space-x-2 text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
               <Shield className="w-3.5 h-3.5 text-emerald-400" />
               <span>Autenticación oficial de Google y reglas de privacidad</span>
             </div>
